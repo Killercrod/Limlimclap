@@ -93,7 +93,11 @@
             <button class="button button-small" type="button" id="bulk-apply">Agregar los escritos</button>
           </details>
           <p class="form-error" id="create-error" role="alert"></p>
-          <button class="button button-primary button-wide" type="submit">Crear sala en directo <span aria-hidden="true">↗</span></button>
+          <div class="create-actions">
+            <button class="button button-primary" type="submit">Crear sala en directo <span aria-hidden="true">↗</span></button>
+            <button class="button button-small" type="button" id="discard-draft">Empezar de cero</button>
+          </div>
+          <p class="field-hint draft-hint">Tu configuración se guarda sola en este navegador. Si cerrás la pestaña, al volver sigue ahí.</p>
         </form>
       </section>
 

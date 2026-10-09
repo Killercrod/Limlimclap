@@ -69,6 +69,7 @@ document.querySelector("#create-form").addEventListener("submit", async (event) 
   }
   currentCode = result.room.code;
   currentActivity = result.activity;
+  discardDraftOnCreate();
   renderHost(result.room);
   showView("host-view");
 });

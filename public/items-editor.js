@@ -8,10 +8,66 @@ const bulkField = document.querySelector("#entries");
 const roundTabsEl = document.querySelector("#round-tabs");
 const MAX_ITEMS = 20;
 const MAX_ROUNDS = 20;
+// El borrador vive en el navegador: si se cierra la pestana a media
+// configuracion, al volver sigue todo. Se guarda solo el texto y el id de cada
+// imagen, nunca los bytes, asi que el peso es de unos pocos KB.
+const DRAFT_KEY = "limlimclap:borrador";
 
 let rounds = [];
 let currentRound = 0;
 const previewUrls = new Map();
+
+// El borrador se guarda al cambiar algo, no en cada tecla: se serializa y se
+// escribe en cada input, que con 20 rondas es barato pero innecesario.
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDraft, 400);
+}
+
+function saveDraft() {
+  try {
+    if (!rounds.length) {
+      localStorage.removeItem(DRAFT_KEY);
+      return;
+    }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ rounds, currentRound }));
+  } catch {
+    // Cuota llena o almacenamiento bloqueado (modo privado): se sigue igual,
+    // solo que el borrador no se guarda.
+  }
+}
+
+function readDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data.rounds) || !data.rounds.length) return null;
+    // El borrador sale de localStorage, que se puede editar a mano o quedar de
+    // una version anterior del editor. Se completa lo que falte en vez de
+    // confiar en la forma: un campo raro no debe impedir abrir el formulario.
+    const rounds = data.rounds.map((round) => ({
+      type: round?.type === "sequence" ? "sequence" : "zones",
+      prompt: typeof round?.prompt === "string" ? round.prompt : "",
+      items: (Array.isArray(round?.items) ? round.items : []).map((item) => ({
+        left: { text: String(item?.left?.text ?? ""), image: item?.left?.image ?? null },
+        right: { text: String(item?.right?.text ?? ""), image: item?.right?.image ?? null },
+      })),
+    }));
+    return { rounds, currentRound: Number(data.currentRound) || 0 };
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    // sin almacenamiento no hay borrador que borrar
+  }
+}
 
 function activeRound() {
   return rounds[currentRound];
@@ -41,7 +97,7 @@ function imageUrl(id) {
 
 function renderEditor() {
   const round = activeRound();
-  editorEl.innerHTML = round.items.map((item, index) => `
+  editorEl.innerHTML = round.items.length ? round.items.map((item, index) => `
     <div class="item-row" data-index="${index}">
       <div class="item-side">
         <div class="item-fields">
@@ -63,10 +119,12 @@ function renderEditor() {
       </div>` : ""}
       <button class="item-remove" type="button" data-remove="${index}" title="Quitar" aria-label="Quitar este elemento">×</button>
       <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-file="${index}" hidden>
-    </div>`).join("") || `<p class="items-empty">Todavía no agregaste elementos.</p>`;
+    </div>`).join("")
+    : `<p class="items-empty">Todavía no agregaste elementos.</p>`;
 
   updateCounters();
   renderRoundTabs();
+  scheduleSave();
   document.querySelector("#round-prompt").value = round.prompt;
   document.querySelectorAll('input[name="round-type"]').forEach((input) => {
     input.checked = input.value === round.type;
@@ -96,6 +154,7 @@ document.querySelector("#add-round").addEventListener("click", addRound);
 document.querySelector("#round-prompt").addEventListener("input", (event) => {
   activeRound().prompt = event.target.value;
   renderRoundTabs();
+  scheduleSave();
 });
 
 document.querySelectorAll('input[name="round-type"]').forEach((input) => {
@@ -122,6 +181,7 @@ editorEl.addEventListener("input", (event) => {
   if (!input) return;
   const index = Number(input.closest("[data-index]").dataset.index);
   activeRound().items[index][input.dataset.side].text = input.value;
+  scheduleSave();
 });
 
 editorEl.addEventListener("click", (event) => {
@@ -226,8 +286,80 @@ function resetEditor() {
   if (bulkField) bulkField.value = "";
 }
 
+// Descartar el borrador guardado y volver a una ronda vacia.
+document.querySelector("#discard-draft")?.addEventListener("click", () => {
+  clearDraft();
+  resetEditor();
+  document.querySelector("#create-error").textContent = "";
+  showToast("Borrador borrado");
+});
+
+// Cuando la sesion ya existe, el borrador cumplio: dejarlo guardado volveria a
+// ofrecer crearla otra vez al volver al formulario.
+function discardDraftOnCreate() {
+  clearDraft();
+}
+
+// Al volver, las imagenes del borrador se comprueban una por una: viven en
+// memoria del servidor, asi que un reinicio las borro y el id guardado ya no
+// sirve. Las que fallen se quitan y se avisa, en vez de dejar un cuadrito roto
+// o un 404 silencioso.
+async function checkImages(allRounds) {
+  const ids = new Set();
+  for (const round of allRounds) {
+    for (const item of round.items) {
+      for (const side of ["left", "right"]) {
+        if (item[side]?.image) ids.add(item[side].image);
+      }
+    }
+  }
+  if (!ids.size) return 0;
+
+  const alive = new Map();
+  await Promise.all([...ids].map(async (id) => {
+    try {
+      const response = await fetch(`${basePath}/img/${id}`, { method: "HEAD" });
+      alive.set(id, response.ok);
+    } catch {
+      alive.set(id, false);
+    }
+  }));
+
+  let lost = 0;
+  for (const round of allRounds) {
+    for (const item of round.items) {
+      for (const side of ["left", "right"]) {
+        const image = item[side]?.image;
+        if (!image) continue;
+        if (alive.get(image)) continue;
+        item[side].image = null;
+        lost += 1;
+      }
+    }
+  }
+  return lost;
+}
+
+async function init() {
+  const draft = readDraft();
+  if (!draft) {
+    addRound();
+    return;
+  }
+  rounds = draft.rounds;
+  currentRound = Math.min(Math.max(0, draft.currentRound || 0), rounds.length - 1);
+
+  const lost = await checkImages(rounds);
+  renderEditor();
+  if (lost) {
+    showToast(`${lost} imagen(es) se perdieron en un reinicio del servidor. Vuelvelas a subir.`);
+  } else {
+    showToast(`Borrador restaurado: ${rounds.length} ronda(s).`);
+  }
+}
+
 // Se inicializa cuando ya corrieron todos los scripts diferidos: renderEditor
 // usa escapeHtml y basePath, que viven en app.js, y este archivo carga antes.
 // Inicializar aqui directamente era un ReferenceError que abortaba el archivo
 // entero y dejaba el formulario vacio, sin inputs ni pestanas.
-window.addEventListener("DOMContentLoaded", resetEditor, { once: true });
+window.addEventListener("DOMContentLoaded", init, { once: true });

@@ -188,3 +188,8 @@ h1, h2 { font-family: Manrope, sans-serif; letter-spacing: -1.5px; }
 .leaderboard-rank { width: 22px; font-weight: 800; color: var(--muted); text-align: center; }
 .leaderboard-name { flex: 1; font-weight: 600; }
 .leaderboard-total { font-weight: 800; color: var(--green); }
+
+/* Borrador: acciones de creacion y nota de guardado. */
+.create-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.create-actions .button-primary { flex: 1; min-width: 200px; }
+.draft-hint { margin-top: 10px; font-size: 11px; color: var(--muted); text-align: center; }
