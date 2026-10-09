@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f7f2">
+    <title>Limlimclap — aprende jugando</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Limlimclap, inicio"><span class="brand-mark">L</span><span>limlimclap</span></a>
+      <span class="topbar-note">Aprender se mueve</span>
+    </header>
+
+    <main>
+      <section class="view active" id="home-view">
+        <div class="hero">
+          <div class="hero-copy">
+            <span class="eyebrow"><span class="sparkle">✳</span> PARTICIPA, JUEGA, APRENDE</span>
+            <h1>Las ideas también<br>se ponen en <span>movimiento.</span></h1>
+            <p>Crea una actividad y compártela en directo. Tu grupo solo necesita un código para participar desde cualquier dispositivo.</p>
+            <div class="hero-actions">
+              <button class="button button-primary" id="show-create">Crear una actividad <span aria-hidden="true">↗</span></button>
+              <button class="button button-secondary" id="show-join">Tengo un código</button>
+            </div>
+            <div class="no-account"><span class="check">✓</span> Sin cuentas para participantes · En directo · Gratis para empezar</div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="art-orbit"></div>
+            <div class="art-card card-one"><span class="art-dot pink"></span>Coloca cada pieza <span class="card-check">✓</span></div>
+            <div class="art-card card-two"><span class="art-grip">⠿</span> Ideas <span class="tiny-arrow">↗</span></div>
+            <div class="art-card card-three"><span class="art-grip">⠿</span> en su sitio</div>
+            <div class="art-sun">✳</div>
+            <span class="art-spark spark-a">✦</span><span class="art-spark spark-b">✳</span>
+          </div>
+        </div>
+        <div class="feature-strip">
+          <div><span class="feature-icon mint">↔</span><span><strong>Arrastra y suelta</strong><small>Empareja o pon en orden</small></span></div>
+          <div><span class="feature-icon peach">⌁</span><span><strong>Entra en segundos</strong><small>Con un código o enlace</small></span></div>
+          <div><span class="feature-icon lilac">◉</span><span><strong>En directo</strong><small>Ve quién ya respondió</small></span></div>
+        </div>
+      </section>
+
+      <section class="view form-view" id="create-view">
+        <button class="back-link" data-go="home-view">← Volver al inicio</button>
+        <div class="form-heading">
+          <span class="eyebrow">TU ACTIVIDAD</span>
+          <h1>Vamos a crearla.</h1>
+          <p>Diseña una dinámica breve y compártela en vivo con tu grupo.</p>
+        </div>
+        <form id="create-form" class="panel create-panel">
+          <label class="field-label" for="activity-type">Tipo de actividad</label>
+          <div class="type-options">
+            <label class="type-option selected" for="type-zones">
+              <input id="type-zones" type="radio" name="activity-type" value="zones" checked>
+              <span class="type-symbol">▦</span><span><strong>Colocar en zonas</strong><small>Relaciona cada elemento con su zona</small></span><span class="radio-mark"></span>
+            </label>
+            <label class="type-option" for="type-sequence">
+              <input id="type-sequence" type="radio" name="activity-type" value="sequence">
+              <span class="type-symbol sequence-icon">↕</span><span><strong>Ordenar secuencia</strong><small>Pon los elementos en el orden correcto</small></span><span class="radio-mark"></span>
+            </label>
+          </div>
+          <label class="field-label" for="prompt">Consigna</label>
+          <input class="text-input" id="prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición" required>
+          <label class="field-label entries-label" id="entries-label" for="entries">Elementos y respuestas</label>
+          <textarea class="text-input entries-input" id="entries" rows="6" required></textarea>
+          <p class="field-hint" id="entries-hint">Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.</p>
+          <p class="form-error" id="create-error" role="alert"></p>
+          <button class="button button-primary button-wide" type="submit">Crear sala en directo <span aria-hidden="true">↗</span></button>
+        </form>
+      </section>
+
+      <section class="view form-view" id="join-view">
+        <button class="back-link" data-go="home-view">← Volver al inicio</button>
+        <div class="form-heading">
+          <span class="eyebrow">ÚNETE A UNA ACTIVIDAD</span>
+          <h1>¡Tu turno!</h1>
+          <p>Escribe el código que te compartieron. No necesitas crear una cuenta.</p>
+        </div>
+        <form id="join-form" class="panel join-panel">
+          <label class="field-label" for="join-code">Código de actividad</label>
+          <input class="text-input code-input" id="join-code" name="code" maxlength="6" placeholder="ABC123" autocomplete="off" required>
+          <label class="field-label" for="join-name">¿Cómo te llamas?</label>
+          <input class="text-input" id="join-name" name="name" maxlength="40" placeholder="Tu nombre" autocomplete="name" required>
+          <p class="form-error" id="join-error" role="alert"></p>
+          <button class="button button-primary button-wide" type="submit">Entrar a la sala <span aria-hidden="true">↗</span></button>
+        </form>
+      </section>
+
+      <section class="view live-view" id="host-view">
+        <div class="live-header">
+          <div><span class="eyebrow"><span class="live-dot"></span> SALA EN DIRECTO</span><h1>Tu actividad está lista.</h1><p>Comparte el código o el enlace para que se una tu grupo.</p></div>
+          <button class="button button-secondary" id="close-room">Cerrar sala</button>
+        </div>
+        <div class="live-grid">
+          <article class="panel share-panel">
+            <span class="field-label">CÓDIGO DE ACCESO</span>
+            <div class="share-code" id="host-code">------</div>
+            <div class="share-link-row"><span id="share-link"></span><button class="button button-small" id="copy-link">Copiar enlace</button></div>
+            <div class="host-activity"><span class="eyebrow">CONSIGNA</span><h2 id="host-prompt"></h2></div>
+          </article>
+          <article class="panel responses-panel">
+            <div class="response-heading"><div><span class="eyebrow">PARTICIPANTES</span><h2>Respuestas</h2></div><span class="count-pill" id="participant-count">0</span></div>
+            <p class="empty-state" id="empty-responses">Cuando alguien entre, aparecerá aquí.</p>
+            <div class="participant-list" id="participant-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view live-view participant-view" id="participant-view">
+        <div class="participant-heading">
+          <span class="eyebrow"><span class="live-dot"></span> <span id="participant-room-label">ACTIVIDAD EN DIRECTO</span></span>
+          <h1 id="participant-prompt"></h1>
+          <p id="participant-instructions"></p>
+        </div>
+        <div id="game-area" class="panel game-panel"></div>
+        <p class="form-error game-error" id="game-error" role="alert"></p>
+        <div class="game-footer"><span class="game-feedback" id="game-feedback">Arrastra las piezas o tócalas para colocarlas.</span><button class="button button-primary" id="submit-answer">Enviar respuesta <span aria-hidden="true">↗</span></button></div>
+      </section>
+
+      <section class="view result-view" id="result-view">
+        <div class="result-mark">✓</div>
+        <span class="eyebrow">RESPUESTA ENVIADA</span>
+        <h1 id="result-title">¡Muy bien!</h1>
+        <p id="result-message">Tu respuesta ya llegó al anfitrión.</p>
+        <div class="result-score" id="result-score"></div>
+        <p class="muted">Puedes dejar esta pantalla abierta mientras el grupo termina.</p>
+      </section>
+    </main>
+    <footer class="footer"><span>limlimclap <span class="footer-dot">✳</span></span><span>Hecho para aprender en compañía.</span></footer>
+    <div class="toast" id="toast" role="status"></div>
+  </body>
+</html>

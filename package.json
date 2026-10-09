@@ -1,0 +1,15 @@
+{
+  "name": "limlimclap",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Actividades colaborativas de arrastrar y soltar",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  }
+}
