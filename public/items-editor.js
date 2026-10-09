@@ -226,5 +226,8 @@ function resetEditor() {
   if (bulkField) bulkField.value = "";
 }
 
-// Arranca con una ronda sola, para que el formulario nunca esté vacío.
-resetEditor();
+// Se inicializa cuando ya corrieron todos los scripts diferidos: renderEditor
+// usa escapeHtml y basePath, que viven en app.js, y este archivo carga antes.
+// Inicializar aqui directamente era un ReferenceError que abortaba el archivo
+// entero y dejaba el formulario vacio, sin inputs ni pestanas.
+window.addEventListener("DOMContentLoaded", resetEditor, { once: true });
