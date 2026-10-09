@@ -6,7 +6,6 @@ const addButton = document.querySelector("#add-item");
 const bulkApply = document.querySelector("#bulk-apply");
 const bulkField = document.querySelector("#entries");
 const roundTabsEl = document.querySelector("#round-tabs");
-const zoneImagesList = document.querySelector("#zone-images-list");
 const MAX_ITEMS = 20;
 const MAX_ROUNDS = 20;
 // El borrador vive en el navegador: si se cierra la pestana a media
@@ -51,9 +50,6 @@ function readDraft() {
     const rounds = data.rounds.map((round) => ({
       type: round?.type === "sequence" ? "sequence" : "zones",
       title: String(round?.title ?? ""),
-      zoneImages: round?.zoneImages && typeof round.zoneImages === "object" && !Array.isArray(round.zoneImages)
-        ? round.zoneImages
-        : {},
       prompt: typeof round?.prompt === "string" ? round.prompt : "",
       items: (Array.isArray(round?.items) ? round.items : []).map((item) => ({
         left: { text: String(item?.left?.text ?? ""), image: item?.left?.image ?? null },
@@ -116,56 +112,6 @@ picker.accept = "image/png,image/jpeg,image/gif,image/webp";
 document.body.appendChild(picker);
 let pickerTarget = null;
 
-// Las zonas son los nombres de la derecha, sin repetir: si tres elementos van a
-// Europa, es una sola zona con tres elementos.
-function roundZones() {
-  const nombres = [];
-  for (const item of activeRound().items) {
-    const texto = (item.right.text || "").trim();
-    if (texto && !nombres.includes(texto)) nombres.push(texto);
-  }
-  return nombres;
-}
-
-function renderZoneImages() {
-  const contenedor = document.querySelector("#zone-images");
-  if (!contenedor) return;
-  const lista = document.querySelector("#zone-images-list");
-  // Solo tiene sentido en "colocar en zonas": en una secuencia no hay columnas.
-  contenedor.hidden = !isZones() || roundZones().length === 0;
-  if (contenedor.hidden) return;
-
-  const zoneImages = activeRound().zoneImages || (activeRound().zoneImages = {});
-  const zonas = roundZones();
-  // Una zona que ya no existe en la ronda no puede seguir con imagenes.
-  for (const zona of Object.keys(zoneImages)) {
-    if (!zonas.includes(zona)) delete zoneImages[zona];
-  }
-
-  lista.innerHTML = zonas.map((zona) => {
-    const ids = zoneImages[zona] || [];
-    return `
-      <div class="zone-row" data-zone="${escapeHtml(zona)}">
-        <div class="zone-row-head">
-          <span class="zone-name">${escapeHtml(zona)}</span>
-          <button class="button button-small" type="button" data-zone-add="${escapeHtml(zona)}">
-            ${ids.length ? "Agregar otra imagen" : "Agregar imagen"}
-          </button>
-        </div>
-        <div class="zone-thumbs">
-          ${ids.length
-            ? ids.map((id, index) => `
-                <span class="zone-thumb">
-                  <img src="${previewUrls.get(id) ?? imageUrl(id)}" alt="">
-                  <button class="zone-thumb-remove" type="button" data-zone-remove="${escapeHtml(zona)}"
-                          data-zone-index="${index}" title="Quitar" aria-label="Quitar imagen de la zona">×</button>
-                </span>`).join("")
-            : '<span class="zone-empty">Solo texto</span>'}
-        </div>
-      </div>`;
-  }).join("");
-}
-
 function renderEditor() {
   const round = activeRound();
   editorEl.innerHTML = round.items.length ? round.items.map((item, index) => `
@@ -194,7 +140,6 @@ function renderEditor() {
 
   updateCounters();
   renderRoundTabs();
-  renderZoneImages();
   scheduleSave();
   document.querySelector("#round-title").value = round.title || "";
   document.querySelector("#round-prompt").value = round.prompt;
@@ -209,9 +154,6 @@ function addRound() {
     type: "zones",
     title: "",
     prompt: "",
-    // Imagenes extra por zona: { [nombreZona]: [ids] }. La principal va en el
-    // elemento, asi que no se repite aca.
-    zoneImages: {},
     items: [{ left: { text: "", image: null }, right: { text: "", image: null } }],
   });
   currentRound = rounds.length - 1;
@@ -262,12 +204,7 @@ editorEl.addEventListener("input", (event) => {
   const input = event.target.closest("[data-side]");
   if (!input) return;
   const index = Number(input.closest("[data-index]").dataset.index);
-  const side = input.dataset.side;
-  activeRound().items[index][side].text = input.value;
-  // El listado de zonas depende de los nombres de la derecha: si el nombre
-  // cambia, aparece o desaparece una zona. Solo se repinta ese listado, no el
-  // editor entero, asi que el cursor no se pierde del campo.
-  renderZoneImages();
+  activeRound().items[index][input.dataset.side].text = input.value;
   scheduleSave();
 });
 
@@ -293,27 +230,6 @@ editorEl.addEventListener("click", (event) => {
   picker.click();
 });
 
-// Un click en "Agregar imagen" de una zona abre el mismo input de archivos, con
-// la zona apuntada en vez de un elemento.
-zoneImagesList.addEventListener("click", (event) => {
-  const quitar = event.target.closest("[data-zone-remove]");
-  if (quitar) {
-    const zoneImages = activeRound().zoneImages || {};
-    const lista = zoneImages[quitar.dataset.zoneRemove];
-    if (!lista) return;
-    lista.splice(Number(quitar.dataset.zoneIndex), 1);
-    if (!lista.length) delete zoneImages[quitar.dataset.zoneRemove];
-    renderEditor();
-    scheduleSave();
-    return;
-  }
-  const agregar = event.target.closest("[data-zone-add]");
-  if (!agregar) return;
-  pickerTarget = { zone: agregar.dataset.zoneAdd };
-  picker.value = "";
-  picker.click();
-});
-
 picker.addEventListener("change", async () => {
   const file = picker.files?.[0];
   const target = pickerTarget;
@@ -324,17 +240,11 @@ picker.addEventListener("change", async () => {
   try {
     const uploaded = await uploadImage(file);
     const round = activeRound();
-    previewUrls.set(uploaded.id, URL.createObjectURL(file));
-    if (target.zone) {
-      round.zoneImages = round.zoneImages || {};
-      const lista = round.zoneImages[target.zone] || (round.zoneImages[target.zone] = []);
-      if (!lista.includes(uploaded.id)) lista.push(uploaded.id);
-    } else {
-      if (!round.items[target.index] || !round.items[target.index][target.side]) {
-        throw new Error("No se encontró dónde poner la imagen. Volvé a abrir la ronda.");
-      }
-      round.items[target.index][target.side].image = uploaded.id;
+    if (!round.items[target.index] || !round.items[target.index][target.side]) {
+      throw new Error("No se encontró dónde poner la imagen. Volvé a abrir la ronda.");
     }
+    round.items[target.index][target.side].image = uploaded.id;
+    previewUrls.set(uploaded.id, URL.createObjectURL(file));
     renderEditor();
     status.dispose();
     showToast("Imagen lista");
@@ -382,8 +292,7 @@ function buildPayload() {
       title: (round.title || "").trim(),
       prompt: round.prompt.trim(),
       ...(round.type === "zones"
-        ? { zoneImages: round.zoneImages || {},
-            pairs: round.items.map((item) => ({
+        ? { pairs: round.items.map((item) => ({
             label: item.left.text.trim(),
             target: item.right.text.trim(),
             labelImage: item.left.image,

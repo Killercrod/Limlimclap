@@ -193,32 +193,6 @@ function cleanImageId(value) {
   return images.has(id) ? id : null;
 }
 
-// Imagenes extra de una zona. Cada elemento lleva una imagen de la zona (la
-// principal, la del cuadrito de cada fila), y aca van las adicionales, para que
-// una columna pueda tener varias o ninguna y quedar solo con el texto.
-function cleanZoneImages(input, zonasConocidas, used) {
-  const salida = {};
-  if (!input || typeof input !== "object" || Array.isArray(input)) return salida;
-  for (const [zona, ids] of Object.entries(input)) {
-    // Solo zonas que existen de verdad en esta ronda: si no, alguien esta
-    // mandando basura que se guardaria sola.
-    if (!zonasConocidas.has(zona) || !Array.isArray(ids)) continue;
-    const lista = [];
-    for (const id of ids) {
-      const limpio = cleanImageId(id);
-      if (!limpio || lista.includes(limpio)) continue;
-      // Cuentan contra el mismo tope que el resto de imagenes de la actividad.
-      if (used.size >= IMAGE_MAX_PER_ACTIVITY) {
-        return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
-      }
-      used.add(limpio);
-      lista.push(limpio);
-    }
-    if (lista.length) salida[zona] = lista;
-  }
-  return salida;
-}
-
 function validateActivity(input) {
   const type = input?.type;
   // Titulo y consigna son dos cosas: el titulo nombra la ronda (lo que sale en
@@ -246,9 +220,7 @@ function validateActivity(input) {
     if (new Set(pairs.map((pair) => pair.label.toLowerCase())).size !== pairs.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
     }
-    // Tope de imagenes por actividad: 20 pares x 2 lados, mas las extra de las
-    // zonas. Las imagenes principales van primero para que ese computo no
-    // dependa del orden en que llegaron las extras.
+    // Tope de imagenes por actividad: 20 pares x 2 lados.
     const used = new Set();
     for (const pair of pairs) {
       for (const id of [pair.labelImage, pair.targetImage]) if (id) used.add(id);
@@ -256,9 +228,7 @@ function validateActivity(input) {
     if (used.size > IMAGE_MAX_PER_ACTIVITY) {
       return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
     }
-    const zoneImages = cleanZoneImages(input.zoneImages, new Set(pairs.map((pair) => pair.target)), used);
-    if (zoneImages?.error) return zoneImages;
-    return { activity: { type, title, prompt, pairs, zoneImages } };
+    return { activity: { type, title, prompt, pairs } };
   }
 
   if (type === "sequence") {
@@ -356,9 +326,6 @@ function participantActivity(room) {
     const targets = [...new Set(activity.pairs.map((pair) => pair.target))].map((target) => ({
       text: target,
       image: activity.pairs.find((pair) => pair.target === target)?.targetImage ?? null,
-      // Adicionales de la zona. Vacio es lo normal: la mayoria de las columnas
-      // con una imagen principal alcanza.
-      images: activity.zoneImages?.[target] ?? [],
     }));
     return { ...base, type: activity.type, prompt: activity.prompt, labels, targets };
   }
@@ -566,7 +533,4 @@ if (require.main === module) {
   });
 }
 
-// El almacen va afuera para poder probar el camino completo con imagenes reales:
-// el servidor solo acepta ids que existen en disco, asi que una prueba con ids
-// inventados probaria el descarte, no el paso de las imagenes extra.
-module.exports = { answerScore, validateActivity, participantActivity, imageStore: images };
+module.exports = { answerScore, validateActivity, participantActivity };

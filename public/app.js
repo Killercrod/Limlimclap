@@ -324,19 +324,14 @@ function renderZones() {
   const bank = area.querySelector("#tile-bank");
   currentActivity.labels.forEach((label, index) => bank.append(makeTile(label, index)));
   currentActivity.targets.forEach((target) => {
-    // El backend puede mandar texto pelado o {text, image, images}.
+    // El backend puede mandar texto o {text, image}.
     const text = typeof target === "string" ? target : target.text;
     const image = typeof target === "string" ? null : target.image;
-    const extra = typeof target === "string" ? [] : (target.images || []);
-    // La principal primero y despues las extra, sin repetir: si el anfitrion
-    // agrego la misma dos veces no tiene que verse dos veces.
-    const todas = [...new Set([image, ...extra].filter(Boolean))];
     const box = document.createElement("div");
     box.className = "target-box";
     box.dataset.target = text;
     box.innerHTML = `
-      ${todas.length ? `<span class="target-images">${todas.map((id) =>
-        `<img class="target-image" src="${imageUrl(id)}" alt="" loading="lazy">`).join("")}</span>` : ""}
+      ${image ? `<img class="target-image" src="${imageUrl(image)}" alt="" loading="lazy">` : ""}
       <span class="target-label">${escapeHtml(text)}</span>`;
     box.addEventListener("click", () => {
       if (selectedTile) placeTile(selectedTile, box);
