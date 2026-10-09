@@ -62,12 +62,36 @@ function imagesTotalBytes() {
 const PUBLIC_DIR = path.join(__dirname, "public");
 const MOUNTS = BASE_PATH ? ["", BASE_PATH] : [""];
 
+// Version de los assets: cambia cuando cambia cualquiera de ellos. Se pone como
+// query en los enlaces del HTML para que un navegador con la copia vieja no siga
+// ejecutando el JS anterior despues de un despliegue.
+const ASSETS = ["app.js", "items-editor.js", "styles.css"];
+const ASSET_VERSION = crypto
+  .createHash("sha1")
+  .update(
+    ASSETS.map((name) => {
+      try {
+        return fs.statSync(path.join(PUBLIC_DIR, name)).mtimeMs;
+      } catch {
+        return "0";
+      }
+    }).join(":"),
+  )
+  .digest("hex")
+  .slice(0, 8);
+
 function serveIndex(request, response, next) {
   fs.readFile(path.join(PUBLIC_DIR, "index.html"), (error, data) => {
     if (error) return next(error);
     response.type("html").send(
       data
         .toString()
+        // La version va primero: todavia esta el marcador __BASE__ literal, que
+        // es lo que permite distinguir los assets propios del resto.
+        .replaceAll(
+          /(__BASE__\/(?:app|items-editor)\.js|__BASE__\/styles\.css)"/g,
+          '$1?v=' + ASSET_VERSION + '"',
+        )
         .replaceAll("__BASE__", BASE_PATH)
         // El cliente lee el prefijo de aqui para apuntar el socket.
         .replace(
