@@ -205,7 +205,7 @@ editorEl.addEventListener("change", async (event) => {
   const file = picker.files?.[0];
   if (!file) return;
 
-  const status = showToast(`Subiendo ${file.name}…`);
+  const status = showToast("Subiendo imagen…");
   try {
     const uploaded = await uploadImage(file);
     // El input se busca por data-file (no data-index): leer la propiedad que no

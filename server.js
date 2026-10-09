@@ -156,6 +156,30 @@ for (const mount of MOUNTS) {
   });
 }
 
+// Al final de todo, y solo ahi: primero se prueban las rutas de arriba.
+//
+// Sin esto Express responde a un error con una pagina HTML que incluye el stack
+// completo, o sea las rutas del servidor en pantalla ("/home/.../server.js:123").
+// Tampoco alcanza con poner NODE_ENV=production: si alguien lo cambia, vuelven a
+// filtrarse. El error real se escribe en el log, que es donde tiene que estar.
+app.use((request, response) => {
+  response.status(404).json({ error: "No existe esa dirección." });
+});
+
+// eslint-disable-next-line no-unused-vars -- Express necesita los 4 argumentos para
+// reconocer esto como un manejador de errores.
+app.use((error, request, response, next) => {
+  console.error(error);
+  if (response.headersSent) return next(error);
+  const status = error?.status || error?.statusCode || 500;
+  const mensaje = status === 413
+    ? `La imagen supera los ${IMAGE_MAX_BYTES / (1024 * 1024)} MB.`
+    : status < 500
+      ? (error?.message || "Petición inválida.")
+      : "Hubo un error en el servidor.";
+  response.status(status).json({ error: mensaje });
+});
+
 function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
