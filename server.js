@@ -1,16 +1,49 @@
 const express = require("express");
 const http = require("node:http");
+const fs = require("node:fs");
 const path = require("node:path");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
 const rooms = new Map();
 const PORT = process.env.PORT || 3000;
+// Prefijo bajo el que se publica la app. Vacio cuando corre sola (localhost:
+//3000) y "/limlimclap" cuando se sirve desde un camino del túnel. Todo lo que
+// el navegador pide tiene que llevar el prefijo: si no, /app.js o
+// /socket.io/ se irían a la aplicación que ocupe la raíz del dominio.
+const BASE_PATH = (process.env.BASE_PATH || "").replace(/\/$/, "");
+// Socket.IO sirve su cliente en la ruta que se le configure, no en un prefijo
+// aparte. Con BASE_PATH hay que alinearla o el navegador pediria el cliente en
+// /limlimclap/socket.io/ y recibiria 404, dejando la app sin JS. El proxy quita
+// solo el prefijo del dominio: /limlimclap/socket.io/ llega aqui como
+// /socket.io/.
+const io = new Server(server, { path: `${BASE_PATH}/socket.io/` });
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-app.use(express.static(path.join(__dirname, "public")));
+// El HTML se lee y se reenvia ya con el prefijo puesto, en lugar de tener
+// rutas absolutas que apuntan a otro sitio. sendFile se usaria sin callback para
+// no tener que pisar sus headers.
+app.get(`${BASE_PATH}/`, (request, response, next) => {
+  fs.readFile(path.join(__dirname, "public", "index.html"), (error, data) => {
+    if (error) return next(error);
+    response.type("html").send(
+      data
+        .toString()
+        .replaceAll("__BASE__", BASE_PATH || "")
+        // El cliente lee el prefijo de aqui para apuntar el socket.
+        .replace(
+          "<body>",
+          `<body>\n    <script>window.__LIMLIM_BASE__=${JSON.stringify(BASE_PATH)};</script>`,
+        )
+        // El enlace del logo apunta a "/", que fuera del prefijo lleva a la raiz
+        // del dominio: hay que fijarlo completo.
+        .replace('href="/"', `href="${BASE_PATH || "/"}"`),
+    );
+  });
+});
+
+app.use(BASE_PATH || "/", express.static(path.join(__dirname, "public")));
 
 function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -157,7 +190,7 @@ io.on("connection", (socket) => {
     const score = answerScore(room.activity, input?.answer);
     if (!score) return acknowledge?.({ error: "Completa todos los elementos antes de enviar." });
 
-    participant.answer = answer;
+    participant.answer = input.answer;
     participant.score = score;
     acknowledge?.({ score });
     io.to(room.hostSocketId).emit("room:update", roomSummary(room));
