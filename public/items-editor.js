@@ -95,6 +95,22 @@ function renderRoundTabs() {
 // reves. Antes estaba aca y app.js la usaba para las imagenes de la sala en
 // vivo, o sea que el archivo que dibuja la partida dependia de que este cargara.
 
+// Un unico input de archivo para todo el editor, y no uno por fila. Se dispara
+// desde el boton de la miniatura.
+//
+// Antes cada fila traia su propio <input type="file" hidden>. El atributo hidden
+// no alcanza: el navegador lo igualaba a pintar y se veía la ruta cruda al lado
+// del campo de texto ("C:\fakepath\pregunta 1.jpeg"), que ademas ocupaba lugar en
+// la fila y por ahi no se podia escribir. No se usa display:none porque con el
+// input en display:none algunos navegadores no abren el dialogo: se lo saca de
+// la pantalla en vez de esconderlo.
+const picker = document.createElement("input");
+picker.type = "file";
+picker.className = "file-picker";
+picker.accept = "image/png,image/jpeg,image/gif,image/webp";
+document.body.appendChild(picker);
+let pickerTarget = null;
+
 function renderEditor() {
   const round = activeRound();
   editorEl.innerHTML = round.items.length ? round.items.map((item, index) => `
@@ -118,7 +134,6 @@ function renderEditor() {
         </div>
       </div>` : ""}
       <button class="item-remove" type="button" data-remove="${index}" title="Quitar" aria-label="Quitar este elemento">×</button>
-      <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" data-file="${index}" hidden>
     </div>`).join("")
     : `<p class="items-empty">Todavía no agregaste elementos.</p>`;
 
@@ -194,31 +209,27 @@ editorEl.addEventListener("click", (event) => {
   const thumb = event.target.closest("[data-side]");
   if (!thumb) return;
   const row = thumb.closest("[data-index]");
-  const picker = editorEl.querySelector(`[data-file="${row.dataset.index}"]`);
-  picker.dataset.side = thumb.dataset.side;
+  // Se guarda a que elemento y de que lado va la imagen, y se dispara el input
+  // comun. Antes habia un input por fila y se leia su indice por atributo.
+  pickerTarget = { index: Number(row.dataset.index), side: thumb.dataset.side };
+  picker.value = "";
   picker.click();
 });
 
-editorEl.addEventListener("change", async (event) => {
-  const picker = event.target.closest("[data-file]");
-  if (!picker) return;
+picker.addEventListener("change", async () => {
   const file = picker.files?.[0];
-  if (!file) return;
+  const target = pickerTarget;
+  pickerTarget = null;
+  if (!file || !target) return;
 
   const status = showToast("Subiendo imagen…");
   try {
     const uploaded = await uploadImage(file);
-    // El input se busca por data-file (no data-index): leer la propiedad que no
-    // existe daba undefined -> Number(undefined) es NaN -> items[NaN] es
-    // undefined y el errormataba el handler. La imagen subia igual, pero nunca
-    // se guardaba en el modelo y no se veia en ningun lado.
-    const index = Number(picker.dataset.file);
     const round = activeRound();
-    const side = picker.dataset.side;
-    if (!round.items[index] || !round.items[index][side]) {
+    if (!round.items[target.index] || !round.items[target.index][target.side]) {
       throw new Error("No se encontró dónde poner la imagen. Volvé a abrir la ronda.");
     }
-    round.items[index][side].image = uploaded.id;
+    round.items[target.index][target.side].image = uploaded.id;
     previewUrls.set(uploaded.id, URL.createObjectURL(file));
     renderEditor();
     status.dispose();

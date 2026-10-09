@@ -193,3 +193,11 @@ h1, h2 { font-family: Manrope, sans-serif; letter-spacing: -1.5px; }
 .create-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .create-actions .button-primary { flex: 1; min-width: 200px; }
 .draft-hint { margin-top: 10px; font-size: 11px; color: var(--muted); text-align: center; }
+
+/* El input de archivo real, que dispara el boton de la miniatura. Se corre fuera
+   de pantalla en vez de usar display:none: asi el dialogo abre siempre y la ruta
+   del archivo nunca se ve. */
+.file-picker {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; opacity: 0;
+}
