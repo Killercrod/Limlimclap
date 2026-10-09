@@ -46,14 +46,6 @@ document.querySelectorAll('input[name="activity-type"]').forEach((input) => {
   input.addEventListener("change", () => {
     document.querySelectorAll(".type-option").forEach((option) => option.classList.remove("selected"));
     input.closest(".type-option").classList.add("selected");
-    const isZones = input.value === "zones";
-    document.querySelector("#entries-label").textContent = isZones ? "Elementos y respuestas" : "Elementos en el orden correcto";
-    document.querySelector("#entries").placeholder = isZones
-      ? "París → Francia\nTokio → Japón\nLima → Perú"
-      : "Primero\nDespués\nAl final";
-    document.querySelector("#entries-hint").innerHTML = isZones
-      ? 'Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.'
-      : "Escribe un elemento por línea, en el orden correcto. Se mezclarán para tus participantes.";
   });
 });
 
@@ -61,19 +53,19 @@ document.querySelector("#create-form").addEventListener("submit", async (event) 
   event.preventDefault();
   const errorElement = document.querySelector("#create-error");
   errorElement.textContent = "";
-  const type = getSelectedType();
-  const lines = document.querySelector("#entries").value.split("\n").map((line) => line.trim()).filter(Boolean);
-  const payload = {
-    type,
-    prompt: document.querySelector("#prompt").value,
-    ...(type === "zones"
-      ? { pairs: lines.map((line) => {
-          const separator = line.includes("→") ? "→" : "->";
-          const parts = line.split(separator);
-          return { label: parts[0]?.trim(), target: parts.slice(1).join(separator).trim() };
-        }) }
-      : { items: lines }),
-  };
+  const payload = buildPayload();
+  if (!payload.prompt.trim()) {
+    errorElement.textContent = "Escribe una consigna para la actividad.";
+    return;
+  }
+  if (payload.pairs && payload.pairs.some((pair) => !pair.label || !pair.target)) {
+    errorElement.textContent = "Completa el elemento y su zona en todas las filas.";
+    return;
+  }
+  if (payload.items && payload.items.some((item) => !item.text)) {
+    errorElement.textContent = "No dejes elementos vacíos.";
+    return;
+  }
   const result = await emitWithAck("host:create", payload);
   if (result?.error) {
     errorElement.textContent = result.error;
@@ -161,14 +153,20 @@ function startActivity() {
   showView("participant-view");
 }
 
-function makeTile(label, index) {
+function makeTile(item, index) {
+  // Acepta texto plano (compatibilidad) o {text, image}.
+  const label = typeof item === "string" ? item : item.text;
+  const image = typeof item === "string" ? null : item.image;
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "tile";
   tile.draggable = true;
   tile.dataset.label = label;
   tile.setAttribute("aria-pressed", "false");
-  tile.innerHTML = `<span class="tile-number">${index + 1}</span><span>${escapeHtml(label)}</span>`;
+  tile.innerHTML = `
+    <span class="tile-number">${index + 1}</span>
+    ${image ? `<img class="tile-image" src="${imageUrl(image)}" alt="" loading="lazy">` : ""}
+    <span>${escapeHtml(label)}</span>`;
   tile.addEventListener("click", () => {
     if (selectedTile === tile) {
       selectTile(null);
@@ -236,10 +234,15 @@ function renderZones() {
   const bank = area.querySelector("#tile-bank");
   currentActivity.labels.forEach((label, index) => bank.append(makeTile(label, index)));
   currentActivity.targets.forEach((target) => {
+    // El backend puede mandar texto o {text, image}.
+    const text = typeof target === "string" ? target : target.text;
+    const image = typeof target === "string" ? null : target.image;
     const box = document.createElement("div");
     box.className = "target-box";
-    box.dataset.target = target;
-    box.innerHTML = `<span class="target-label">${escapeHtml(target)}</span>`;
+    box.dataset.target = text;
+    box.innerHTML = `
+      ${image ? `<img class="target-image" src="${imageUrl(image)}" alt="" loading="lazy">` : ""}
+      <span class="target-label">${escapeHtml(text)}</span>`;
     box.addEventListener("click", () => {
       if (selectedTile) placeTile(selectedTile, box);
     });

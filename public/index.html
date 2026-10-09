@@ -10,7 +10,8 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="__BASE__/styles.css">
     <script src="__BASE__/socket.io/socket.io.js" defer></script>
-    <script src="__BASE__/app.js" defer></script>
+    <script src="__BASE__/items-editor.js" defer></script>
+  <script src="__BASE__/app.js" defer></script>
   </head>
   <body>
     <header class="topbar">
@@ -68,9 +69,21 @@
           </div>
           <label class="field-label" for="prompt">Consigna</label>
           <input class="text-input" id="prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición" required>
-          <label class="field-label entries-label" id="entries-label" for="entries">Elementos y respuestas</label>
-          <textarea class="text-input entries-input" id="entries" rows="6" required></textarea>
-          <p class="field-hint" id="entries-hint">Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.</p>
+          <label class="field-label entries-label" id="entries-label">Elementos y respuestas</label>
+          <p class="field-hint" id="entries-hint">Agrega un elemento y la zona donde va. La imagen es opcional.</p>
+          <div class="items-editor" id="items-editor"></div>
+          <div class="items-actions">
+            <button class="button button-small" type="button" id="add-item">+ Agregar elemento</button>
+            <span class="items-counter" id="items-counter">0 de 20</span>
+          </div>
+          <!-- Se conserva el textarea para pegar varias lineas de una vez, que
+               es mas rapido cuando ya tenes los datos escritos. El editor de
+               items es el camino normal. -->
+          <details class="bulk-add">
+            <summary>Pegar varios de una vez</summary>
+            <textarea class="text-input entries-input" id="entries" rows="4" placeholder="París → Francia&#10;Tokio → Japón"></textarea>
+            <button class="button button-small" type="button" id="bulk-apply">Agregar los escritos</button>
+          </details>
           <p class="form-error" id="create-error" role="alert"></p>
           <button class="button button-primary button-wide" type="submit">Crear sala en directo <span aria-hidden="true">↗</span></button>
         </form>

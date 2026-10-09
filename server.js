@@ -1,5 +1,6 @@
 const express = require("express");
 const http = require("node:http");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Server } = require("socket.io");
@@ -20,6 +21,39 @@ const BASE_PATH = (process.env.BASE_PATH || "").replace(/\/$/, "");
 // (path por defecto). Si se le pusiera el prefijo aqui, no habria coincidencia.
 const io = new Server(server);
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+// Imagenes en memoria, igual que las salas: un reinicio las borra. No hay
+// archivos que limpiar ni rutas de disco que asegurar.
+const images = new Map();
+const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const IMAGE_MAX_COUNT = 40;
+const IMAGE_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
+
+// El tipo que declara el navegador no sirve para decidir nada: cualquiera
+// puede mandar cualquier cosa. Se mira la firma del archivo.
+const IMAGE_SIGNATURES = [
+  { type: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  { type: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
+  { type: "image/gif", bytes: [0x47, 0x49, 0x46, 0x38] },
+  { type: "image/webp", bytes: [0x52, 0x49, 0x46, 0x46] },
+];
+
+function sniffImage(buffer) {
+  for (const { type, bytes } of IMAGE_SIGNATURES) {
+    if (bytes.every((byte, index) => buffer[index] === byte)) {
+      // WebP comparte firma RIFF con WAV: se confirma el "WEBP" de los bytes 8-11.
+      if (type === "image/webp" && buffer.toString("ascii", 8, 12) !== "WEBP") continue;
+      return type;
+    }
+  }
+  return null;
+}
+
+function imagesTotalBytes() {
+  let total = 0;
+  for (const image of images.values()) total += image.bytes;
+  return total;
+}
 
 // La app se monta en la raiz y en el prefijo, y no solo en uno de los dos:
 // con el tunel de por medio el prefijo se pierde (/limlimclap/ llega como /) y
@@ -47,13 +81,77 @@ function serveIndex(request, response, next) {
   });
 }
 
+// express.raw corta el cuerpo antes del handler cuando excede el limite, y por
+// defecto responde con una pagina HTML. Se cambia por JSON para que el cliente
+// pueda mostrar el motivo.
+function uploadErrorHandler(error, request, response, next) {
+  if (error?.type === "entity.too.large") {
+    return response.status(413).json({
+      error: `La imagen supera los ${IMAGE_MAX_BYTES / (1024 * 1024)} MB.`,
+    });
+  }
+  return next(error);
+}
+
 for (const mount of MOUNTS) {
   app.get(`${mount}/`, serveIndex);
   app.use(mount || "/", express.static(PUBLIC_DIR));
+
+  // Subida de imagen. Se manda el binario crudo (no base64 ni multipart) para
+  // no agregar dependencias ni gastar un tercio más de ancho de banda. El limite
+  // va antes del handler: si el cuerpo excede, express.raw corta la peticion.
+  app.post(
+    `${mount}/upload`,
+    express.raw({ type: () => true, limit: IMAGE_MAX_BYTES }),
+    (request, response) => {
+      const buffer = request.body;
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+        return response.status(400).json({ error: "No llegó ninguna imagen." });
+      }
+      const type = sniffImage(buffer);
+      if (!type) {
+        return response
+          .status(415)
+          .json({ error: "Ese archivo no es una imagen (PNG, JPG, GIF o WebP)." });
+      }
+      if (images.size >= IMAGE_MAX_COUNT) {
+        return response.status(429).json({ error: `Máximo ${IMAGE_MAX_COUNT} imágenes.` });
+      }
+      if (imagesTotalBytes() + buffer.length > IMAGE_TOTAL_MAX_BYTES) {
+        return response
+          .status(429)
+          .json({ error: "Se alcanzó el máximo de imágenes subidas en el servidor." });
+      }
+      const id = crypto.randomUUID();
+      images.set(id, { buffer, type, bytes: buffer.length });
+      response.status(201).json({ id, type, bytes: buffer.length });
+    },
+    uploadErrorHandler,
+  );
+
+  // Servir una imagen por id opaco. Se responde con cache porque el id es
+  // aleatorio y el contenido no cambia: el navegador no vuelve a bajarla.
+  app.get(`${mount}/img/:id`, (request, response) => {
+    const image = images.get(request.params.id);
+    if (!image) return response.status(404).send("No existe esa imagen");
+    response
+      .type(image.type)
+      .set("Cache-Control", "public, max-age=86400, immutable")
+      .send(image.buffer);
+  });
 }
 
 function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+
+// Una imagen se referencia por id. Si el id no existe (o no es un string), se
+// descarta en silencio: es opcional y una referencia vieja no debe romper la
+// creación de la actividad.
+function cleanImageId(value) {
+  if (typeof value !== "string") return null;
+  const id = value.trim();
+  return images.has(id) ? id : null;
 }
 
 function validateActivity(input) {
@@ -68,12 +166,24 @@ function validateActivity(input) {
     const pairs = input.pairs.map((pair) => ({
       label: cleanText(pair?.label, 80),
       target: cleanText(pair?.target, 80),
+      // Con imagen o solo con texto: el nombre sigue siendo obligatorio, asi
+      // que un elemento sin texto y sin foto no llega a existir.
+      labelImage: cleanImageId(pair?.labelImage),
+      targetImage: cleanImageId(pair?.targetImage),
     }));
     if (pairs.some((pair) => !pair.label || !pair.target)) {
       return { error: "Cada elemento y cada zona deben tener un nombre." };
     }
     if (new Set(pairs.map((pair) => pair.label.toLowerCase())).size !== pairs.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
+    }
+    // Tope de imagenes por actividad: 20 pares x 2 lados.
+    const used = new Set();
+    for (const pair of pairs) {
+      for (const id of [pair.labelImage, pair.targetImage]) if (id) used.add(id);
+    }
+    if (used.size > IMAGE_MAX_COUNT) {
+      return { error: `Máximo ${IMAGE_MAX_COUNT} imágenes por actividad.` };
     }
     return { activity: { type, prompt, pairs } };
   }
@@ -82,14 +192,16 @@ function validateActivity(input) {
     if (!Array.isArray(input.items) || input.items.length < 2 || input.items.length > 20) {
       return { error: "Añade entre 2 y 20 elementos para ordenar." };
     }
-    const items = input.items.map((item) => cleanText(item, 80));
+    const items = input.items.map((item) =>
+      typeof item === "string" ? cleanText(item, 80) : cleanText(item?.text, 80));
+    const itemImages = input.items.map((item) => cleanImageId(item?.image));
     if (items.some((item) => !item)) {
       return { error: "No dejes elementos vacíos." };
     }
     if (new Set(items.map((item) => item.toLowerCase())).size !== items.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
     }
-    return { activity: { type, prompt, items } };
+    return { activity: { type, prompt, items, itemImages } };
   }
 
   return { error: "Elige un tipo de actividad válido." };
@@ -126,6 +238,29 @@ function roomSummary(room) {
       score: participant.score,
     })),
   };
+}
+
+// Lo que ve el participante. Se arma aca y no en el socket porque las zonas se
+// deduplican (varias parejas pueden apuntar a la misma zona) y hay que llevar
+// la imagen de cada zona una sola vez.
+function participantActivity(room) {
+  const activity = room.activity;
+  if (activity.type === "zones") {
+    const labels = activity.pairs.map((pair) => ({ text: pair.label, image: pair.labelImage }));
+    const targets = [...new Set(activity.pairs.map((pair) => pair.target))].map((target) => ({
+      text: target,
+      image: activity.pairs.find((pair) => pair.target === target)?.targetImage ?? null,
+    }));
+    return { type: activity.type, prompt: activity.prompt, labels, targets };
+  }
+
+  // En secuencia los items van mezclados: la imagen tiene que viajar pegada al
+  // texto, no en un array paralelo que se desalinea al barajar.
+  const items = shuffled(activity.items.map((text, index) => ({
+    text,
+    image: activity.itemImages?.[index] ?? null,
+  })));
+  return { type: activity.type, prompt: activity.prompt, items };
 }
 
 function answerScore(activity, answer) {
@@ -175,16 +310,7 @@ io.on("connection", (socket) => {
 
     room.participants.set(socket.id, { name: participantName, connected: true, answer: null, score: null });
     socket.join(room.code);
-    acknowledge?.({
-      room: roomSummary(room),
-      activity: {
-        type: room.activity.type,
-        prompt: room.activity.prompt,
-        ...(room.activity.type === "zones"
-          ? { labels: room.activity.pairs.map((pair) => pair.label), targets: [...new Set(room.activity.pairs.map((pair) => pair.target))] }
-          : { items: shuffled(room.activity.items) }),
-      },
-    });
+    acknowledge?.({ room: roomSummary(room), activity: participantActivity(room) });
     io.to(room.hostSocketId).emit("room:update", roomSummary(room));
   });
 

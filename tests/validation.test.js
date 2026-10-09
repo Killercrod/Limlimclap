@@ -12,16 +12,46 @@ test("validates and normalizes a zone-matching activity", () => {
     ],
   });
 
+  // Las imagenes son opcionales: sin id quedan en null en vez de desaparecer,
+  // para que el cliente siempre encuentre el mismo campo.
   assert.deepEqual(result, {
     activity: {
       type: "zones",
       prompt: "Relaciona",
       pairs: [
-        { label: "París", target: "Francia" },
-        { label: "Lima", target: "Perú" },
+        { label: "París", target: "Francia", labelImage: null, targetImage: null },
+        { label: "Lima", target: "Perú", labelImage: null, targetImage: null },
       ],
     },
   });
+});
+
+test("descarta referencias de imagen que no existen", () => {
+  const result = validateActivity({
+    type: "zones",
+    prompt: "Relaciona",
+    pairs: [
+      { label: "París", target: "Francia", labelImage: "inventado", targetImage: 42 },
+      { label: "Lima", target: "Perú" },
+    ],
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.activity.pairs[0].labelImage, null);
+  assert.equal(result.activity.pairs[0].targetImage, null);
+});
+
+test("acepta items de secuencia como texto o como objeto con imagen", () => {
+  const asText = validateActivity({ type: "sequence", prompt: "Ordena", items: ["  Primero ", "Después"] });
+  assert.deepEqual(asText.activity.items, ["Primero", "Después"]);
+
+  const asObject = validateActivity({
+    type: "sequence",
+    prompt: "Ordena",
+    items: [{ text: "Primero" }, { text: "Después", image: null }],
+  });
+  assert.deepEqual(asObject.activity.items, ["Primero", "Después"]);
+  assert.deepEqual(asObject.activity.itemImages, [null, null]);
 });
 
 test("rejects incomplete and duplicate activity entries", () => {
