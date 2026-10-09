@@ -52,7 +52,13 @@ function readDraft() {
       title: String(round?.title ?? ""),
       prompt: typeof round?.prompt === "string" ? round.prompt : "",
       items: (Array.isArray(round?.items) ? round.items : []).map((item) => ({
-        left: { text: String(item?.left?.text ?? ""), image: item?.left?.image ?? null },
+        left: {
+          text: String(item?.left?.text ?? ""),
+          // El elemento puede traer la lista nueva o la imagen suelta de una
+          // version anterior.
+          images: Array.isArray(item?.left?.images) ? item.left.images.filter(Boolean)
+            : item?.left?.image ? [item.left.image] : [],
+        },
         right: { text: String(item?.right?.text ?? ""), image: item?.right?.image ?? null },
       })),
     }));
@@ -112,14 +118,32 @@ picker.accept = "image/png,image/jpeg,image/gif,image/webp";
 document.body.appendChild(picker);
 let pickerTarget = null;
 
+// Los cuadritos de imagen de un elemento. Cada uno se puede quitar y el "+"
+// agrega otra: un elemento puede llevar varias imagenes o ninguna. La zona, en
+// cambio, mantiene un solo cuadro, asi que no usa esta galeria.
+function galeriaHtml(lista, index, side) {
+  const ids = lista || [];
+  if (!ids.length) return '<span class="gallery-empty">Sin imagen</span>';
+  return ids.map((id, posicion) => `
+    <span class="thumb">
+      <img src="${previewUrls.get(id) ?? imageUrl(id)}" alt="">
+      <button class="thumb-remove" type="button" data-remove-image="${index}"
+              data-remove-side="${side}" data-remove-pos="${posicion}"
+              title="Quitar" aria-label="Quitar esta imagen del elemento">\u00d7</button>
+    </span>`).join("");
+}
+
 function renderEditor() {
   const round = activeRound();
   editorEl.innerHTML = round.items.length ? round.items.map((item, index) => `
     <div class="item-row" data-index="${index}">
       <div class="item-side">
+        <div class="item-gallery" data-gallery="${index}">
+          ${galeriaHtml(item.left.images, index, "left")}
+          <button class="thumb thumb-add" type="button" data-side="left" data-add="${index}"
+                  title="Agregar imagen" aria-label="Agregar otra imagen al elemento">+</button>
+        </div>
         <div class="item-fields">
-          <button class="thumb" type="button" data-side="left" title="Elegir imagen"
-                  aria-label="Elegir imagen">${item.left.image ? `<img src="${previewUrls.get(item.left.image) ?? imageUrl(item.left.image)}" alt="">` : "<span>🖼</span>"}</button>
           <input class="text-input item-input" data-side="left" type="text" maxlength="80"
                  placeholder="${round.type === "zones" ? "Ej. París" : "Ej. Primero"}" value="${escapeHtml(item.left.text)}">
         </div>
@@ -154,7 +178,7 @@ function addRound() {
     type: "zones",
     title: "",
     prompt: "",
-    items: [{ left: { text: "", image: null }, right: { text: "", image: null } }],
+    items: [{ left: { text: "", images: [] }, right: { text: "", image: null } }],
   });
   currentRound = rounds.length - 1;
   renderEditor();
@@ -209,10 +233,27 @@ editorEl.addEventListener("input", (event) => {
 });
 
 editorEl.addEventListener("click", (event) => {
+  const quitarImagen = event.target.closest("[data-remove-image]");
+  if (quitarImagen) {
+    const item = activeRound().items[Number(quitarImagen.dataset.removeImage)];
+    item.left.images.splice(Number(quitarImagen.dataset.removePos), 1);
+    renderEditor();
+    scheduleSave();
+    return;
+  }
   const remove = event.target.closest("[data-remove]");
   if (remove) {
     activeRound().items.splice(Number(remove.dataset.remove), 1);
     renderEditor();
+    return;
+  }
+  // El "+" de la galeria agrega otra imagen al elemento. Sin esto, el manejador
+  // de abajo lo tomaba por un clic en una miniatura cualquiera.
+  const agregar = event.target.closest("[data-add]");
+  if (agregar) {
+    pickerTarget = { index: Number(agregar.dataset.add), side: "left" };
+    picker.value = "";
+    picker.click();
     return;
   }
   // Solo la miniatura abre el selector de archivos. Los campos de texto tambien
@@ -221,6 +262,7 @@ editorEl.addEventListener("click", (event) => {
   // instante: no se podia escribir al lado de la imagen.
   const thumb = event.target.closest("button.thumb[data-side]");
   if (!thumb) return;
+  if (thumb.dataset.side !== "right") return;
   const row = thumb.closest("[data-index]");
   if (!row) return;
   // Se guarda a que elemento y de que lado va la imagen, y se dispara el input
@@ -240,10 +282,17 @@ picker.addEventListener("change", async () => {
   try {
     const uploaded = await uploadImage(file);
     const round = activeRound();
-    if (!round.items[target.index] || !round.items[target.index][target.side]) {
+    const item = round.items[target.index];
+    if (!item || !item[target.side]) {
       throw new Error("No se encontró dónde poner la imagen. Volvé a abrir la ronda.");
     }
-    round.items[target.index][target.side].image = uploaded.id;
+    if (target.side === "left") {
+      // El elemento acumula: cada "agregar" suma una imagen.
+      if (!item.left.images.includes(uploaded.id)) item.left.images.push(uploaded.id);
+    } else {
+      // La zona tiene una sola: la nueva reemplaza a la anterior.
+      item.right.image = uploaded.id;
+    }
     previewUrls.set(uploaded.id, URL.createObjectURL(file));
     renderEditor();
     status.dispose();
@@ -295,10 +344,10 @@ function buildPayload() {
         ? { pairs: round.items.map((item) => ({
             label: item.left.text.trim(),
             target: item.right.text.trim(),
-            labelImage: item.left.image,
+            labelImages: [...(item.left.images || [])],
             targetImage: item.right.image,
           })) }
-        : { items: round.items.map((item) => ({ text: item.left.text.trim(), image: item.left.image })) }),
+        : { items: round.items.map((item) => ({ text: item.left.text.trim(), images: [...(item.left.images || [])] })) }),
     })),
   };
 }

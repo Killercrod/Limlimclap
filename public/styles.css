@@ -220,3 +220,17 @@ h1, h2 { font-family: Manrope, sans-serif; letter-spacing: -1.5px; }
   .qr-block { flex-basis: 84px; }
   .qr-frame { width: 84px; height: 84px; }
 }
+
+/* Elemento con varias imagenes. La zona, en cambio, sigue con un solo cuadro. */
+.item-gallery { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.item-gallery .thumb { position: relative; }
+.gallery-empty { color: var(--muted); font-size: 11px; margin-right: 2px; }
+.thumb-add { font-size: 19px; line-height: 1; color: var(--muted); }
+.thumb-add:hover { border-color: var(--green); color: var(--green); }
+.thumb-remove {
+  position: absolute; top: -6px; right: -6px; width: 19px; height: 19px;
+  display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%;
+  background: var(--ink); color: #fff; font-size: 12px; line-height: 1; cursor: pointer;
+}
+.thumb-remove:hover { background: #b23c3c; }
+.tile-images { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }

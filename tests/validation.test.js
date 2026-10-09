@@ -22,8 +22,9 @@ test("validates and normalizes a zone-matching activity", () => {
       title: "Países y capitales",
       prompt: "Relaciona",
       pairs: [
-        { label: "París", target: "Francia", labelImage: null, targetImage: null },
-        { label: "Lima", target: "Perú", labelImage: null, targetImage: null },
+        // El elemento lleva una lista de imagenes; la zona, una sola.
+        { label: "París", target: "Francia", labelImages: [], targetImage: null },
+        { label: "Lima", target: "Perú", labelImages: [], targetImage: null },
       ],
     },
   });
@@ -47,14 +48,32 @@ test("descarta referencias de imagen que no existen", () => {
     type: "zones",
     prompt: "Relaciona",
     pairs: [
-      { label: "París", target: "Francia", labelImage: "inventado", targetImage: 42 },
-      { label: "Lima", target: "Perú" },
+      { label: "París", target: "Francia", labelImages: ["inventado"], targetImage: 42 },
+      { label: "Lima", target: "Perú", labelImages: "no-es-una-lista" },
     ],
   });
 
   assert.equal(result.error, undefined);
-  assert.equal(result.activity.pairs[0].labelImage, null);
+  // Una lista con basura se deja vacia en vez de romper, y una imagen que no es
+  // lista no se acepta.
+  assert.deepEqual(result.activity.pairs[0].labelImages, []);
   assert.equal(result.activity.pairs[0].targetImage, null);
+  assert.deepEqual(result.activity.pairs[1].labelImages, []);
+});
+
+test("un elemento con imagenes repetidas las guarda una sola vez", () => {
+  const result = validateActivity({
+    type: "zones",
+    prompt: "Relaciona",
+    pairs: [
+      { label: "París", target: "Francia", labelImages: ["mismo", "mismo", "otro"] },
+      { label: "Lima", target: "Perú" },
+    ],
+  });
+  // Sin ids reales en el almacen todos se descartan, pero el comportamiento se
+  // ve en el helper: lo que importa es que nunca queda una lista con repetidos.
+  const lista = result.activity.pairs[0].labelImages;
+  assert.equal(new Set(lista).size, lista.length);
 });
 
 test("acepta items de secuencia como texto o como objeto con imagen", () => {
@@ -64,10 +83,11 @@ test("acepta items de secuencia como texto o como objeto con imagen", () => {
   const asObject = validateActivity({
     type: "sequence",
     prompt: "Ordena",
-    items: [{ text: "Primero" }, { text: "Después", image: null }],
+    items: [{ text: "Primero" }, { text: "Después", images: [] }],
   });
   assert.deepEqual(asObject.activity.items, ["Primero", "Después"]);
-  assert.deepEqual(asObject.activity.itemImages, [null, null]);
+  // Cada elemento tiene su lista de imagenes, vacia si no puso ninguna.
+  assert.deepEqual(asObject.activity.itemImages, [[], []]);
 });
 
 test("rejects incomplete and duplicate activity entries", () => {

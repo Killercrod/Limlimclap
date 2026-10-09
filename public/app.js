@@ -244,9 +244,10 @@ function startActivity() {
 }
 
 function makeTile(item, index) {
-  // Acepta texto plano (compatibilidad) o {text, image}.
+  // Acepta texto plano (compatibilidad) o {text, images}: un elemento puede
+  // llevar varias imagenes.
   const label = typeof item === "string" ? item : item.text;
-  const image = typeof item === "string" ? null : item.image;
+  const images = typeof item === "string" ? [] : (item.images || []);
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "tile";
@@ -255,7 +256,8 @@ function makeTile(item, index) {
   tile.setAttribute("aria-pressed", "false");
   tile.innerHTML = `
     <span class="tile-number">${index + 1}</span>
-    ${image ? `<img class="tile-image" src="${imageUrl(image)}" alt="" loading="lazy">` : ""}
+    ${images.length ? `<span class="tile-images">${images.map((id) =>
+      `<img class="tile-image" src="${imageUrl(id)}" alt="" loading="lazy">`).join("")}</span>` : ""}
     <span>${escapeHtml(label)}</span>`;
   tile.addEventListener("click", () => {
     if (selectedTile === tile) {

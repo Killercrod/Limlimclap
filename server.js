@@ -193,6 +193,25 @@ function cleanImageId(value) {
   return images.has(id) ? id : null;
 }
 
+// Lista de imagenes de un elemento. Un elemento puede llevar varias (una bandera,
+// un mapa, una foto) o ninguna; la zona, en cambio, sigue siendo una sola: es la
+// cabecera de la columna y con una alcanza.
+function cleanImageList(value, used) {
+  if (!Array.isArray(value)) return [];
+  const lista = [];
+  for (const id of value) {
+    const limpio = cleanImageId(id);
+    if (!limpio || lista.includes(limpio)) continue;
+    // Cuentan contra el mismo tope que el resto de imagenes de la actividad.
+    if (used.size >= IMAGE_MAX_PER_ACTIVITY) {
+      return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
+    }
+    used.add(limpio);
+    lista.push(limpio);
+  }
+  return lista;
+}
+
 function validateActivity(input) {
   const type = input?.type;
   // Titulo y consigna son dos cosas: el titulo nombra la ronda (lo que sale en
@@ -206,25 +225,34 @@ function validateActivity(input) {
     if (!Array.isArray(input.pairs) || input.pairs.length < 2 || input.pairs.length > 20) {
       return { error: "Añade entre 2 y 20 elementos con su zona correcta." };
     }
-    const pairs = input.pairs.map((pair) => ({
-      label: cleanText(pair?.label, 80),
-      target: cleanText(pair?.target, 80),
-      // Con imagen o solo con texto: el nombre sigue siendo obligatorio, asi
-      // que un elemento sin texto y sin foto no llega a existir.
-      labelImage: cleanImageId(pair?.labelImage),
-      targetImage: cleanImageId(pair?.targetImage),
-    }));
+    // Las imagenes se limpian antes de armar los pares porque el tope de la
+    // actividad se cuenta sobre el total, no sobre cada elemento.
+    const used = new Set();
+    const pairs = [];
+    for (const pair of input.pairs) {
+      const labelImages = cleanImageList(pair?.labelImages, used);
+      if (labelImages?.error) return labelImages;
+      pairs.push({
+        label: cleanText(pair?.label, 80),
+        target: cleanText(pair?.target, 80),
+        // Con imagen o solo con texto: el nombre sigue siendo obligatorio, asi
+        // que un elemento sin texto y sin foto no llega a existir.
+        labelImages,
+        // La zona lleva una sola imagen: es la cabecera de la columna.
+        targetImage: cleanImageId(pair?.targetImage),
+      });
+    }
+    for (const pair of pairs) {
+      if (pair.targetImage) used.add(pair.targetImage);
+    }
     if (pairs.some((pair) => !pair.label || !pair.target)) {
       return { error: "Cada elemento y cada zona deben tener un nombre." };
     }
     if (new Set(pairs.map((pair) => pair.label.toLowerCase())).size !== pairs.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
     }
-    // Tope de imagenes por actividad: 20 pares x 2 lados.
-    const used = new Set();
-    for (const pair of pairs) {
-      for (const id of [pair.labelImage, pair.targetImage]) if (id) used.add(id);
-    }
+    // Tope de imagenes por actividad: hasta 20 elementos con sus imagenes, mas
+    // una por zona.
     if (used.size > IMAGE_MAX_PER_ACTIVITY) {
       return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
     }
@@ -235,14 +263,24 @@ function validateActivity(input) {
     if (!Array.isArray(input.items) || input.items.length < 2 || input.items.length > 20) {
       return { error: "Añade entre 2 y 20 elementos para ordenar." };
     }
-    const items = input.items.map((item) =>
-      typeof item === "string" ? cleanText(item, 80) : cleanText(item?.text, 80));
-    const itemImages = input.items.map((item) => cleanImageId(item?.image));
+    // Igual que en zonas: un elemento puede llevar varias imagenes o ninguna.
+    const used = new Set();
+    const items = [];
+    const itemImages = [];
+    for (const item of input.items) {
+      const images = cleanImageList(typeof item === "string" ? null : item?.images, used);
+      if (images?.error) return images;
+      items.push(typeof item === "string" ? cleanText(item, 80) : cleanText(item?.text, 80));
+      itemImages.push(images);
+    }
     if (items.some((item) => !item)) {
       return { error: "No dejes elementos vacíos." };
     }
     if (new Set(items.map((item) => item.toLowerCase())).size !== items.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
+    }
+    if (used.size > IMAGE_MAX_PER_ACTIVITY) {
+      return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
     }
     return { activity: { type, title, prompt, items, itemImages } };
   }
@@ -322,7 +360,7 @@ function participantActivity(room) {
     title: activity.title || activity.prompt,
   };
   if (activity.type === "zones") {
-    const labels = activity.pairs.map((pair) => ({ text: pair.label, image: pair.labelImage }));
+    const labels = activity.pairs.map((pair) => ({ text: pair.label, images: pair.labelImages || [] }));
     const targets = [...new Set(activity.pairs.map((pair) => pair.target))].map((target) => ({
       text: target,
       image: activity.pairs.find((pair) => pair.target === target)?.targetImage ?? null,
@@ -482,11 +520,13 @@ function imagesInUse(rooms) {
     for (const round of room.rounds || []) {
       if (round.type === "zones") {
         for (const pair of round.pairs || []) {
-          if (pair.labelImage) inUse.add(pair.labelImage);
+          for (const id of pair.labelImages || []) if (id) inUse.add(id);
           if (pair.targetImage) inUse.add(pair.targetImage);
         }
       } else {
-        for (const id of round.itemImages || []) if (id) inUse.add(id);
+        for (const lista of round.itemImages || []) {
+          for (const id of lista || []) if (id) inUse.add(id);
+        }
       }
     }
   }
@@ -533,4 +573,7 @@ if (require.main === module) {
   });
 }
 
-module.exports = { answerScore, validateActivity, participantActivity };
+// El almacen va afuera para poder probar el camino completo con imagenes reales:
+// el servidor solo acepta ids que existen en disco, asi que una prueba con ids
+// inventados probaria el descarte, no el paso de las imagenes.
+module.exports = { answerScore, validateActivity, participantActivity, imageStore: images };
