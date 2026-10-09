@@ -13,24 +13,28 @@ const PORT = process.env.PORT || 3000;
 // el navegador pide tiene que llevar el prefijo: si no, /app.js o
 // /socket.io/ se irían a la aplicación que ocupe la raíz del dominio.
 const BASE_PATH = (process.env.BASE_PATH || "").replace(/\/$/, "");
-// Socket.IO sirve su cliente en la ruta que se le configure, no en un prefijo
-// aparte. Con BASE_PATH hay que alinearla o el navegador pediria el cliente en
-// /limlimclap/socket.io/ y recibiria 404, dejando la app sin JS. El proxy quita
-// solo el prefijo del dominio: /limlimclap/socket.io/ llega aqui como
-// /socket.io/.
-const io = new Server(server, { path: `${BASE_PATH}/socket.io/` });
+// Socket.IO se deja con su ruta por defecto (/socket.io/) a proposito, y es
+// contraintuitivo: el tunel de Tailscale quita el prefijo antes de reenviar, asi
+// que /limlimclap/socket.io/ llega a esta app como /socket.io/. Lo que el
+// navegador pide lleva el prefijo (BASE_PATH) y lo que el servidor matchea no
+// (path por defecto). Si se le pusiera el prefijo aqui, no habria coincidencia.
+const io = new Server(server);
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-// El HTML se lee y se reenvia ya con el prefijo puesto, en lugar de tener
-// rutas absolutas que apuntan a otro sitio. sendFile se usaria sin callback para
-// no tener que pisar sus headers.
-app.get(`${BASE_PATH}/`, (request, response, next) => {
-  fs.readFile(path.join(__dirname, "public", "index.html"), (error, data) => {
+// La app se monta en la raiz y en el prefijo, y no solo en uno de los dos:
+// con el tunel de por medio el prefijo se pierde (/limlimclap/ llega como /) y
+// al probar en local se usa el otro. BASE_PATH sigue sirviendo para lo que ve el
+// navegador: los enlaces que genera el HTML.
+const PUBLIC_DIR = path.join(__dirname, "public");
+const MOUNTS = BASE_PATH ? ["", BASE_PATH] : [""];
+
+function serveIndex(request, response, next) {
+  fs.readFile(path.join(PUBLIC_DIR, "index.html"), (error, data) => {
     if (error) return next(error);
     response.type("html").send(
       data
         .toString()
-        .replaceAll("__BASE__", BASE_PATH || "")
+        .replaceAll("__BASE__", BASE_PATH)
         // El cliente lee el prefijo de aqui para apuntar el socket.
         .replace(
           "<body>",
@@ -41,9 +45,12 @@ app.get(`${BASE_PATH}/`, (request, response, next) => {
         .replace('href="/"', `href="${BASE_PATH || "/"}"`),
     );
   });
-});
+}
 
-app.use(BASE_PATH || "/", express.static(path.join(__dirname, "public")));
+for (const mount of MOUNTS) {
+  app.get(`${mount}/`, serveIndex);
+  app.use(mount || "/", express.static(PUBLIC_DIR));
+}
 
 function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -223,8 +230,12 @@ io.on("connection", (socket) => {
 });
 
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`Limlimclap disponible en http://localhost:${PORT}`);
+  // Sin host, Node escucha en todas las interfaces y la app queda accesible
+  // desde toda la red local, saltandose el proxy. Lo atamos a loopback por
+  // defecto: la entrada publica la define el proxy, no el proceso.
+  const HOST = process.env.HOST || "127.0.0.1";
+  server.listen(PORT, HOST, () => {
+    console.log(`Limlimclap disponible en http://${HOST}:${PORT}`);
   });
 }
 
