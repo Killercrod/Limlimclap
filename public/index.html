@@ -10,6 +10,7 @@
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="__BASE__/styles.css">
     <script src="__BASE__/socket.io/socket.io.js" defer></script>
+    <script src="__BASE__/vendor/qrcode.js" defer></script>
     <script src="__BASE__/items-editor.js" defer></script>
   <script src="__BASE__/app.js" defer></script>
   </head>
@@ -129,9 +130,17 @@
         </div>
         <div class="live-grid">
           <article class="panel share-panel">
-            <span class="field-label">CÓDIGO DE ACCESO</span>
-            <div class="share-code" id="host-code">------</div>
-            <div class="share-link-row"><span id="share-link"></span><button class="button button-small" id="copy-link">Copiar enlace</button></div>
+            <div class="share-top">
+              <div class="share-code-block">
+                <span class="field-label">CÓDIGO DE ACCESO</span>
+                <div class="share-code" id="host-code">------</div>
+                <div class="share-link-row"><span id="share-link"></span><button class="button button-small" id="copy-link">Copiar enlace</button></div>
+              </div>
+              <figure class="qr-block">
+                <div class="qr-frame" id="room-qr"></div>
+                <figcaption>Escaneá para entrar</figcaption>
+              </figure>
+            </div>
             <div class="host-activity"><span class="eyebrow">CONSIGNA</span><h2 id="host-prompt"></h2></div>
           </article>
           <article class="panel responses-panel">

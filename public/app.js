@@ -96,9 +96,32 @@ function renderHost(room) {
   link.search = `?join=${room.code}`;
   document.querySelector("#share-link").textContent = link.href;
   document.querySelector("#host-prompt").textContent = room.prompt;
+  renderRoomQr(link.href);
   renderParticipants(room.participants);
   renderLeaderboard(room.participants);
   renderRoundHeader(room);
+}
+
+// El QR lleva el mismo enlace que el boton de copiar, con el codigo ya puesto:
+// el grupo entra escaneando y no tiene que escribirlo. Si la libreria no esta o
+// falla, el codigo grande sigue estando arriba, asi que la sala no se rompe.
+function renderRoomQr(text) {
+  const target = document.querySelector("#room-qr");
+  if (!target) return;
+  try {
+    if (typeof qrcode !== "function") throw new Error("la libreria no cargó");
+    target.innerHTML = "";
+    // typeNumber 0 hace que la libreria elija el tamano justo para el texto, en
+    // vez de fijo: un enlace largo en un QR chico sale ilegible al escanear.
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    target.insertAdjacentHTML("beforeend",
+      qr.createSvgTag({ cellSize: 4, scalable: true, alt: "Código QR para entrar a la sala" }));
+  } catch {
+    target.textContent = "";
+    target.classList.add("is-empty");
+  }
 }
 
 function renderParticipants(participants) {
