@@ -25,6 +25,9 @@ test("validates and normalizes a zone-matching activity", () => {
         { label: "París", target: "Francia", labelImage: null, targetImage: null },
         { label: "Lima", target: "Perú", labelImage: null, targetImage: null },
       ],
+      // Sin imagenes extra por zona, el mapa queda vacio: siempre presente, para
+      // que el cliente no tenga que adivinar si viene o no.
+      zoneImages: {},
     },
   });
 });
@@ -97,4 +100,23 @@ test("scores a sequence only when it contains every activity item once", () => {
   assert.deepEqual(answerScore(activity, ["Al final", "Después", "Primero"]), { correct: 1, total: 3 });
   assert.equal(answerScore(activity, ["Primero", "Primero", "Al final"]), null);
   assert.equal(answerScore(activity, ["Primero", "Después"]), null);
+});
+
+test("las imagenes extra de una zona se guardan por zona y no de otras", () => {
+  const base = {
+    type: "zones",
+    prompt: "Relaciona",
+    pairs: [
+      { label: "París", target: "Europa" },
+      { label: "Roma", target: "Europa" },
+      { label: "Tokio", target: "Asia" },
+    ],
+  };
+  // Sin imagenes de verdad en el almacen, todos los ids se descartan: el
+  // servidor no acepta referencias que no puede servir.
+  const sinImagenes = validateActivity({
+    ...base,
+    zoneImages: { Europa: ["id-que-no-existe"], ZonaInventada: ["otro"] },
+  });
+  assert.deepEqual(sinImagenes.activity.zoneImages, {});
 });
