@@ -1,4 +1,9 @@
-const socket = io();
+// El servidor inyecta el prefijo de publicacion en el HTML (ver BASE_PATH en
+// server.js). Con prefijo, el socket tiene que apuntar a /limlimclap/socket.io/:
+// si se deja el valor por defecto (/socket.io/) la conexion caeria en la otra
+// aplicacion que ocupe la raiz del dominio.
+const basePath = window.__LIMLIM_BASE__ || "";
+const socket = io({ path: `${basePath}/socket.io/` });
 const views = [...document.querySelectorAll(".view")];
 const toast = document.querySelector("#toast");
 let currentCode = "";
