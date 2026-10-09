@@ -22,38 +22,29 @@ const BASE_PATH = (process.env.BASE_PATH || "").replace(/\/$/, "");
 const io = new Server(server);
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-// Imagenes en memoria, igual que las salas: un reinicio las borra. No hay
-// archivos que limpiar ni rutas de disco que asegurar.
-const images = new Map();
+// Imagenes en disco, en /var/lib y no dentro del repo: sobreviven a un reinicio,
+// asi que el borrador del host y las salas en curso ya no se quedan sin ellas.
+// El directorio queda fuera de ProtectedHome=read-only, asi que el servicio
+// necesita ReadWritePaths para poder escribir ahi.
+const IMAGE_DIR = process.env.IMAGE_DIR || "/var/lib/limlimclap/imagenes";
 const IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-const IMAGE_MAX_COUNT = 40;
-const IMAGE_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
+// 40 imagenes por actividad es el tope que ve una ronda. El almacen completo
+// tiene que ser bastante mas grande: con 8 MB de tope global quedaban cuatro
+// imagenes en todo el servidor y a la quinta subida fallaba todo, que solo
+// servia mientras las imagenes vivieran en memoria y se perdieran solas.
+const IMAGE_MAX_PER_ACTIVITY = 40;
+const IMAGE_TOTAL_MAX_BYTES = 64 * 1024 * 1024;
+const IMAGE_MAX_COUNT = 2000;
+const IMAGE_TTL_HOURS = 72;
 
-// El tipo que declara el navegador no sirve para decidir nada: cualquiera
-// puede mandar cualquier cosa. Se mira la firma del archivo.
-const IMAGE_SIGNATURES = [
-  { type: "image/png", bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
-  { type: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
-  { type: "image/gif", bytes: [0x47, 0x49, 0x46, 0x38] },
-  { type: "image/webp", bytes: [0x52, 0x49, 0x46, 0x46] },
-];
-
-function sniffImage(buffer) {
-  for (const { type, bytes } of IMAGE_SIGNATURES) {
-    if (bytes.every((byte, index) => buffer[index] === byte)) {
-      // WebP comparte firma RIFF con WAV: se confirma el "WEBP" de los bytes 8-11.
-      if (type === "image/webp" && buffer.toString("ascii", 8, 12) !== "WEBP") continue;
-      return type;
-    }
-  }
-  return null;
-}
-
-function imagesTotalBytes() {
-  let total = 0;
-  for (const image of images.values()) total += image.bytes;
-  return total;
-}
+const { createImageStore } = require("./image-store");
+const images = createImageStore({
+  dir: IMAGE_DIR,
+  maxBytes: IMAGE_MAX_BYTES,
+  maxCount: IMAGE_MAX_COUNT,
+  maxTotalBytes: IMAGE_TOTAL_MAX_BYTES,
+  ttlMs: IMAGE_TTL_HOURS * 60 * 60 * 1000,
+});
 
 // La app se monta en la raiz y en el prefijo, y no solo en uno de los dos:
 // con el tunel de por medio el prefijo se pierde (/limlimclap/ llega como /) y
@@ -127,41 +118,41 @@ for (const mount of MOUNTS) {
   app.post(
     `${mount}/upload`,
     express.raw({ type: () => true, limit: IMAGE_MAX_BYTES }),
-    (request, response) => {
+    async (request, response, next) => {
       const buffer = request.body;
       if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
         return response.status(400).json({ error: "No llegó ninguna imagen." });
       }
-      const type = sniffImage(buffer);
+      const type = images.sniffImage(buffer);
       if (!type) {
         return response
           .status(415)
           .json({ error: "Ese archivo no es una imagen (PNG, JPG, GIF o WebP)." });
       }
-      if (images.size >= IMAGE_MAX_COUNT) {
-        return response.status(429).json({ error: `Máximo ${IMAGE_MAX_COUNT} imágenes.` });
+      try {
+        const saved = await images.save(buffer, type);
+        response.status(201).json(saved);
+      } catch (error) {
+        if (error?.status) return response.status(error.status).json({ error: error.message });
+        return next(error);
       }
-      if (imagesTotalBytes() + buffer.length > IMAGE_TOTAL_MAX_BYTES) {
-        return response
-          .status(429)
-          .json({ error: "Se alcanzó el máximo de imágenes subidas en el servidor." });
-      }
-      const id = crypto.randomUUID();
-      images.set(id, { buffer, type, bytes: buffer.length });
-      response.status(201).json({ id, type, bytes: buffer.length });
     },
     uploadErrorHandler,
   );
 
   // Servir una imagen por id opaco. Se responde con cache porque el id es
   // aleatorio y el contenido no cambia: el navegador no vuelve a bajarla.
-  app.get(`${mount}/img/:id`, (request, response) => {
-    const image = images.get(request.params.id);
-    if (!image) return response.status(404).send("No existe esa imagen");
-    response
-      .type(image.type)
-      .set("Cache-Control", "public, max-age=86400, immutable")
-      .send(image.buffer);
+  app.get(`${mount}/img/:id`, async (request, response, next) => {
+    try {
+      const image = await images.read(request.params.id);
+      if (!image) return response.status(404).send("No existe esa imagen");
+      response
+        .type(image.type)
+        .set("Cache-Control", "public, max-age=86400, immutable")
+        .send(image.buffer);
+    } catch (error) {
+      next(error);
+    }
   });
 }
 
@@ -206,8 +197,8 @@ function validateActivity(input) {
     for (const pair of pairs) {
       for (const id of [pair.labelImage, pair.targetImage]) if (id) used.add(id);
     }
-    if (used.size > IMAGE_MAX_COUNT) {
-      return { error: `Máximo ${IMAGE_MAX_COUNT} imágenes por actividad.` };
+    if (used.size > IMAGE_MAX_PER_ACTIVITY) {
+      return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
     }
     return { activity: { type, prompt, pairs } };
   }
@@ -446,13 +437,67 @@ io.on("connection", (socket) => {
   });
 });
 
+// Que imagenes sigue usando alguna sala en curso. La barrida nunca borra una de
+// estas: si se fuera, la ronda en curso se quedaria con cuadritos rotos.
+/**
+ * Ids de imagenes referenciadas por salas abiertas.
+ * @param {Map<string, any>} rooms
+ * @returns {Set<string>}
+ */
+function imagesInUse(rooms) {
+  const inUse = new Set();
+  for (const room of rooms.values()) {
+    for (const round of room.rounds || []) {
+      if (round.type === "zones") {
+        for (const pair of round.pairs || []) {
+          if (pair.labelImage) inUse.add(pair.labelImage);
+          if (pair.targetImage) inUse.add(pair.targetImage);
+        }
+      } else {
+        for (const id of round.itemImages || []) if (id) inUse.add(id);
+      }
+    }
+  }
+  return inUse;
+}
+
+// Las imagenes que ya no usa nadie se van solas: primero las que vencieron, y
+// despues las mas viejas si el disco sigue pasado el tope. Sin esto, las que
+// nunca llegan a una sala se acumulan para siempre y una vez llenado el tope
+// ninguna subida vuelve a funcionar.
+const IMAGE_SWEEP_MS = 30 * 60 * 1000;
+function startImageSweep() {
+  const sweep = () => {
+    images.prune(() => imagesInUse(rooms)).then((removed) => {
+      if (removed) console.log(`Barrida de imagenes: ${removed} borrada(s)`);
+    }).catch((error) => console.error(`Falló la barrida de imagenes: ${error.message}`));
+  };
+  // unref: el temporizador no debe impedir que el proceso termine solo.
+  const timer = setInterval(sweep, IMAGE_SWEEP_MS);
+  timer.unref();
+  sweep();
+  return timer;
+}
+
 if (require.main === module) {
   // Sin host, Node escucha en todas las interfaces y la app queda accesible
   // desde toda la red local, saltandose el proxy. Lo atamos a loopback por
   // defecto: la entrada publica la define el proxy, no el proceso.
   const HOST = process.env.HOST || "127.0.0.1";
-  server.listen(PORT, HOST, () => {
-    console.log(`Limlimclap disponible en http://${HOST}:${PORT}`);
+  // Las imagenes se cargan antes de escuchar: si se aceptaran peticiones antes,
+  // has() responderia que no existe una imagen que si esta en disco y un borrador
+  // restaurado perderia justamente lo que se pide conservar.
+  images.load().then((result) => {
+    if (result.loaded || result.discarded) {
+      console.log(`Imagenes recuperadas de disco: ${result.loaded} (${result.discarded} descartadas)`);
+    }
+    startImageSweep();
+    server.listen(PORT, HOST, () => {
+      console.log(`Limlimclap disponible en http://${HOST}:${PORT}`);
+    });
+  }).catch((error) => {
+    console.error(`No se pudo preparar el almacen de imagenes: ${error.message}`);
+    process.exit(1);
   });
 }
 
