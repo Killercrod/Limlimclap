@@ -56,29 +56,37 @@
           <p>Diseña una dinámica breve y compártela en vivo con tu grupo.</p>
         </div>
         <form id="create-form" class="panel create-panel">
-          <label class="field-label" for="activity-type">Tipo de actividad</label>
+          <div class="rounds-head">
+            <span class="field-label">RONDAS</span>
+            <span class="items-counter" id="round-counter">1 ronda</span>
+          </div>
+          <div class="round-tabs" id="round-tabs"></div>
+          <button class="button button-small" type="button" id="add-round">+ Agregar ronda</button>
+
+          <hr class="form-separator">
+
+          <label class="field-label" for="round-prompt">Consigna de esta ronda</label>
+          <input class="text-input" id="round-prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición">
+
+          <label class="field-label">Tipo de actividad</label>
           <div class="type-options">
-            <label class="type-option selected" for="type-zones">
-              <input id="type-zones" type="radio" name="activity-type" value="zones" checked>
+            <label class="type-option" for="round-type-zones">
+              <input id="round-type-zones" type="radio" name="round-type" value="zones" checked>
               <span class="type-symbol">▦</span><span><strong>Colocar en zonas</strong><small>Relaciona cada elemento con su zona</small></span><span class="radio-mark"></span>
             </label>
-            <label class="type-option" for="type-sequence">
-              <input id="type-sequence" type="radio" name="activity-type" value="sequence">
+            <label class="type-option" for="round-type-sequence">
+              <input id="round-type-sequence" type="radio" name="round-type" value="sequence">
               <span class="type-symbol sequence-icon">↕</span><span><strong>Ordenar secuencia</strong><small>Pon los elementos en el orden correcto</small></span><span class="radio-mark"></span>
             </label>
           </div>
-          <label class="field-label" for="prompt">Consigna</label>
-          <input class="text-input" id="prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición" required>
-          <label class="field-label entries-label" id="entries-label">Elementos y respuestas</label>
-          <p class="field-hint" id="entries-hint">Agrega un elemento y la zona donde va. La imagen es opcional.</p>
+
+          <label class="field-label">Elementos de esta ronda</label>
+          <p class="field-hint">Agrega un elemento y la zona donde va. La imagen es opcional.</p>
           <div class="items-editor" id="items-editor"></div>
           <div class="items-actions">
             <button class="button button-small" type="button" id="add-item">+ Agregar elemento</button>
-            <span class="items-counter" id="items-counter">0 de 20</span>
+            <span class="items-counter" id="items-counter">0 de 20 elementos</span>
           </div>
-          <!-- Se conserva el textarea para pegar varias lineas de una vez, que
-               es mas rapido cuando ya tenes los datos escritos. El editor de
-               items es el camino normal. -->
           <details class="bulk-add">
             <summary>Pegar varios de una vez</summary>
             <textarea class="text-input entries-input" id="entries" rows="4" placeholder="París → Francia&#10;Tokio → Japón"></textarea>
@@ -109,7 +117,11 @@
       <section class="view live-view" id="host-view">
         <div class="live-header">
           <div><span class="eyebrow"><span class="live-dot"></span> SALA EN DIRECTO</span><h1>Tu actividad está lista.</h1><p>Comparte el código o el enlace para que se una tu grupo.</p></div>
-          <button class="button button-secondary" id="close-room">Cerrar sala</button>
+          <div class="live-actions">
+            <span class="round-pill" id="host-round-label">Ronda 1 de 1</span>
+            <button class="button button-secondary" id="next-round">Siguiente ronda</button>
+            <button class="button button-secondary" id="close-room">Cerrar sala</button>
+          </div>
         </div>
         <div class="live-grid">
           <article class="panel share-panel">
@@ -124,6 +136,11 @@
             <div class="participant-list" id="participant-list"></div>
           </article>
         </div>
+        <article class="panel leaderboard-panel">
+          <div class="response-heading"><div><span class="eyebrow">ACUMULADO</span><h2>Tabla general</h2></div></div>
+          <p class="empty-state" id="empty-leaderboard">Cuando alguien responda, se ordena el acumulado.</p>
+          <div class="leaderboard-list" id="leaderboard-list"></div>
+        </article>
       </section>
 
       <section class="view live-view participant-view" id="participant-view">

@@ -207,6 +207,29 @@ function validateActivity(input) {
   return { error: "Elige un tipo de actividad válido." };
 }
 
+const MAX_ROUNDS = 20;
+
+// Una sesion es una lista de actividades: cada una es una ronda. Se validan
+// todas por separado y el error dice en cual fallo, para que el host sepa que
+// corregir sin contar de a uno.
+function validateRounds(input) {
+  if (!Array.isArray(input?.rounds) || input.rounds.length === 0) {
+    return { error: "Agrega al menos una ronda." };
+  }
+  if (input.rounds.length > MAX_ROUNDS) {
+    return { error: `Máximo ${MAX_ROUNDS} rondas por sesión.` };
+  }
+  const rounds = [];
+  for (const [index, round] of input.rounds.entries()) {
+    const result = validateActivity(round);
+    if (result.error) {
+      return { error: `Ronda ${index + 1}: ${result.error}` };
+    }
+    rounds.push(result.activity);
+  }
+  return { rounds };
+}
+
 function makeRoomCode() {
   let code;
   do {
@@ -229,29 +252,35 @@ function shuffled(items) {
 function roomSummary(room) {
   return {
     code: room.code,
-    prompt: room.activity.prompt,
-    type: room.activity.type,
+    roundIndex: room.roundIndex,
+    roundsCount: room.rounds.length,
+    prompt: room.rounds[room.roundIndex].prompt,
+    type: room.rounds[room.roundIndex].type,
     participants: [...room.participants.values()].map((participant) => ({
       name: participant.name,
       connected: participant.connected,
-      submitted: participant.answer !== null,
-      score: participant.score,
+      // En la ronda actual. El total va aparte para el ranking acumulado.
+      submitted: participant.answers[room.roundIndex] !== undefined,
+      score: participant.answers[room.roundIndex] ?? null,
+      total: participant.total,
     })),
   };
 }
 
-// Lo que ve el participante. Se arma aca y no en el socket porque las zonas se
-// deduplican (varias parejas pueden apuntar a la misma zona) y hay que llevar
-// la imagen de cada zona una sola vez.
+// Lo que ve el participante de la ronda en curso.
 function participantActivity(room) {
-  const activity = room.activity;
+  const activity = room.rounds[room.roundIndex];
+  const base = {
+    roundIndex: room.roundIndex,
+    roundsCount: room.rounds.length,
+  };
   if (activity.type === "zones") {
     const labels = activity.pairs.map((pair) => ({ text: pair.label, image: pair.labelImage }));
     const targets = [...new Set(activity.pairs.map((pair) => pair.target))].map((target) => ({
       text: target,
       image: activity.pairs.find((pair) => pair.target === target)?.targetImage ?? null,
     }));
-    return { type: activity.type, prompt: activity.prompt, labels, targets };
+    return { ...base, type: activity.type, prompt: activity.prompt, labels, targets };
   }
 
   // En secuencia los items van mezclados: la imagen tiene que viajar pegada al
@@ -260,7 +289,7 @@ function participantActivity(room) {
     text,
     image: activity.itemImages?.[index] ?? null,
   })));
-  return { type: activity.type, prompt: activity.prompt, items };
+  return { ...base, type: activity.type, prompt: activity.prompt, items };
 }
 
 function answerScore(activity, answer) {
@@ -286,19 +315,20 @@ function answerScore(activity, answer) {
 
 io.on("connection", (socket) => {
   socket.on("host:create", (input, acknowledge) => {
-    const result = validateActivity(input);
+    const result = validateRounds(input);
     if (result.error) return acknowledge?.({ error: result.error });
 
     const room = {
       code: makeRoomCode(),
       hostSocketId: socket.id,
-      activity: result.activity,
+      rounds: result.rounds,
+      roundIndex: 0,
       participants: new Map(),
       open: true,
     };
     rooms.set(room.code, room);
     socket.join(room.code);
-    acknowledge?.({ room: roomSummary(room), activity: room.activity });
+    acknowledge?.({ room: roomSummary(room), activity: participantActivity(room) });
   });
 
   socket.on("participant:join", (input, acknowledge) => {
@@ -308,9 +338,22 @@ io.on("connection", (socket) => {
     if (!room || !room.open) return acknowledge?.({ error: "No encontramos una actividad abierta con ese código." });
     if (!participantName) return acknowledge?.({ error: "Escribe tu nombre para entrar." });
 
-    room.participants.set(socket.id, { name: participantName, connected: true, answer: null, score: null });
+    // Un socket que reconecta no debe perder lo que ya habia respondido: se
+    // busca por nombre, que es lo unico que el participante elige.
+    const previous = [...room.participants.values()].find((p) => p.name === participantName);
+    room.participants.set(socket.id, {
+      name: participantName,
+      connected: true,
+      answers: previous ? { ...previous.answers } : {},
+      total: previous?.total ?? 0,
+    });
     socket.join(room.code);
-    acknowledge?.({ room: roomSummary(room), activity: participantActivity(room) });
+    acknowledge?.({
+      room: roomSummary(room),
+      activity: participantActivity(room),
+      // Para repintar las rondas ya respondidas si el socket se reconectó.
+      answers: [...room.participants.values()].find((p) => p.name === participantName).answers,
+    });
     io.to(room.hostSocketId).emit("room:update", roomSummary(room));
   });
 
@@ -320,14 +363,38 @@ io.on("connection", (socket) => {
     if (!room || !room.open || !participant) {
       return acknowledge?.({ error: "La actividad ya no está disponible. Vuelve a entrar con un código activo." });
     }
-    const score = answerScore(room.activity, input?.answer);
+    const roundIndex = room.roundIndex;
+    if (participant.answers[roundIndex] !== undefined) {
+      return acknowledge?.({ error: "Ya respondiste esta ronda." });
+    }
+    const score = answerScore(room.rounds[roundIndex], input?.answer);
     if (!score) return acknowledge?.({ error: "Completa todos los elementos antes de enviar." });
 
-    participant.answer = input.answer;
-    participant.score = score;
-    acknowledge?.({ score });
+    participant.answers[roundIndex] = score;
+    participant.total += score.correct;
+    acknowledge?.({ score, total: participant.total, roundIndex });
     io.to(room.hostSocketId).emit("room:update", roomSummary(room));
-    socket.emit("participant:submitted", { score });
+    socket.emit("participant:submitted", { score, total: participant.total, roundIndex });
+  });
+
+  // Avanza a la ronda siguiente. Solo el host, y solo si la actual tiene al
+  // menos una respuesta: pasar antes de que nadie conteste deja a la gente
+  // mirando una consigna que ya quedo atras.
+  socket.on("host:next", (input, acknowledge) => {
+    const room = rooms.get(cleanText(input?.code, 6).toUpperCase());
+    if (!room || room.hostSocketId !== socket.id || !room.open) return;
+    if (room.roundIndex >= room.rounds.length - 1) {
+      return acknowledge?.({ error: "Ya están todas las rondas." });
+    }
+    const answered = [...room.participants.values()]
+      .filter((p) => p.answers[room.roundIndex] !== undefined).length;
+    if (!answered) {
+      return acknowledge?.({ error: "Nadie respondió esta ronda todavía." });
+    }
+    room.roundIndex += 1;
+    const payload = { room: roomSummary(room), activity: participantActivity(room) };
+    io.to(room.code).emit("round:changed", payload);
+    acknowledge?.(payload);
   });
 
   socket.on("host:close", (input) => {

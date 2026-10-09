@@ -154,3 +154,37 @@ h1, h2 { font-family: Manrope, sans-serif; letter-spacing: -1.5px; }
   background: #eceee5;
 }
 .target-image { height: 84px; }
+
+/* Rondas: pestañas, contador y tabla acumulada. */
+.rounds-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.rounds-head .field-label { margin: 0; }
+.round-tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 10px; }
+.round-tab {
+  display: flex; align-items: center; gap: 8px; flex: 0 0 auto; max-width: 220px;
+  border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 12px;
+  cursor: pointer; font-size: 12px; color: var(--muted); text-align: left;
+}
+.round-tab.active { border-color: var(--green); background: #f2f6f2; color: var(--ink); }
+.round-tab-number {
+  width: 20px; height: 20px; flex: 0 0 20px; border-radius: 6px; display: grid; place-items: center;
+  background: #eceee5; font-weight: 700; font-size: 11px;
+}
+.round-tab.active .round-tab-number { background: var(--green); color: #fff; }
+.round-tab-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.form-separator { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
+
+.live-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.round-pill {
+  background: var(--green); color: #fff; border-radius: 999px; padding: 7px 14px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+
+.leaderboard-panel { margin-top: 18px; }
+.leaderboard-list { display: grid; gap: 8px; }
+.leaderboard-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: #fbfbf8;
+}
+.leaderboard-rank { width: 22px; font-weight: 800; color: var(--muted); text-align: center; }
+.leaderboard-name { flex: 1; font-weight: 600; }
+.leaderboard-total { font-weight: 800; color: var(--green); }

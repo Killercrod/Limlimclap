@@ -53,20 +53,16 @@ document.querySelector("#create-form").addEventListener("submit", async (event) 
   event.preventDefault();
   const errorElement = document.querySelector("#create-error");
   errorElement.textContent = "";
-  const payload = buildPayload();
-  if (!payload.prompt.trim()) {
-    errorElement.textContent = "Escribe una consigna para la actividad.";
+
+  // Se revisa ronda por ronda antes de mandar nada: el backend tambien valida,
+  // pero avisar acá evita el viaje de ida y vuelta.
+  const problem = firstProblem();
+  if (problem) {
+    errorElement.textContent = problem;
     return;
   }
-  if (payload.pairs && payload.pairs.some((pair) => !pair.label || !pair.target)) {
-    errorElement.textContent = "Completa el elemento y su zona en todas las filas.";
-    return;
-  }
-  if (payload.items && payload.items.some((item) => !item.text)) {
-    errorElement.textContent = "No dejes elementos vacíos.";
-    return;
-  }
-  const result = await emitWithAck("host:create", payload);
+
+  const result = await emitWithAck("host:create", buildPayload());
   if (result?.error) {
     errorElement.textContent = result.error;
     return;
@@ -84,6 +80,8 @@ function renderHost(room) {
   document.querySelector("#share-link").textContent = link.href;
   document.querySelector("#host-prompt").textContent = room.prompt;
   renderParticipants(room.participants);
+  renderLeaderboard(room.participants);
+  renderRoundHeader(room);
 }
 
 function renderParticipants(participants) {
@@ -96,6 +94,43 @@ function renderParticipants(participants) {
       <span class="participant-status ${participant.submitted ? "done" : ""}">${participant.submitted ? `Respondió · ${participant.score.correct}/${participant.score.total}` : participant.connected ? "Conectado" : "Desconectado"}</span>
     </div>`).join("");
 }
+
+// Acumulado entre rondas. Se ordena por puntos y, a igualdad, por quien
+// respondio antes en la ultima ronda.
+function renderLeaderboard(participants) {
+  const scored = participants.filter((participant) => participant.total > 0);
+  document.querySelector("#empty-leaderboard").hidden = scored.length > 0;
+  const ranked = [...scored].sort((a, b) => b.total - a.total).slice(0, 10);
+  document.querySelector("#leaderboard-list").innerHTML = ranked.map((participant, index) => `
+    <div class="leaderboard-row">
+      <span class="leaderboard-rank">${index + 1}</span>
+      <span class="participant-avatar">${escapeHtml(participant.name.slice(0, 1).toUpperCase())}</span>
+      <span class="leaderboard-name">${escapeHtml(participant.name)}</span>
+      <span class="leaderboard-total">${participant.total} pts</span>
+    </div>`).join("");
+}
+
+// El indicador de ronda y el boton de avance viven juntos: cuando ya no quedan
+// rondas, el boton se deshabilita en vez de desaparecer, para que el layout no
+// salte a mitad de la sesion.
+function renderRoundHeader(room) {
+  document.querySelector("#host-round-label").textContent =
+    `Ronda ${room.roundIndex + 1} de ${room.roundsCount}`;
+  const nextButton = document.querySelector("#next-round");
+  nextButton.disabled = room.roundIndex >= room.roundsCount - 1;
+  nextButton.textContent = room.roundIndex >= room.roundsCount - 1
+    ? "Última ronda"
+    : "Siguiente ronda";
+}
+
+document.querySelector("#next-round").addEventListener("click", async () => {
+  const result = await emitWithAck("host:next", { code: currentCode });
+  if (result?.error) {
+    showToast(result.error);
+    return;
+  }
+  showToast(`Ronda ${result.room.roundIndex + 1}`);
+});
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
@@ -142,7 +177,10 @@ document.querySelector("#join-form").addEventListener("submit", async (event) =>
 });
 
 function startActivity() {
-  document.querySelector("#participant-room-label").textContent = `SALA ${currentCode}`;
+  const roundsLabel = currentActivity.roundsCount > 1
+    ? `SALA ${currentCode} · RONDA ${currentActivity.roundIndex + 1} de ${currentActivity.roundsCount}`
+    : `SALA ${currentCode}`;
+  document.querySelector("#participant-room-label").textContent = roundsLabel;
   document.querySelector("#participant-prompt").textContent = currentActivity.prompt;
   document.querySelector("#game-error").textContent = "";
   document.querySelector("#game-feedback").textContent = "Arrastra las piezas o tócalas para colocarlas.";
@@ -326,8 +364,29 @@ function showResult(score) {
 }
 
 socket.on("room:update", (room) => {
-  if (room.code === currentCode && document.querySelector("#host-view").classList.contains("active")) {
-    renderParticipants(room.participants);
+  if (room.code !== currentCode) return;
+  const onHostView = document.querySelector("#host-view").classList.contains("active");
+  if (!onHostView) return;
+  renderParticipants(room.participants);
+  renderLeaderboard(room.participants);
+  renderRoundHeader(room);
+  document.querySelector("#host-prompt").textContent = room.prompt;
+});
+
+// El host avanza de ronda: el participante recibe la nueva consigna solo, sin
+// volver a entrar con el codigo.
+socket.on("round:changed", (payload) => {
+  if (payload.room.code !== currentCode) return;
+  currentActivity = payload.activity;
+  if (document.querySelector("#participant-view").classList.contains("active")) {
+    startActivity();
+    showToast(`Ronda ${payload.activity.roundIndex + 1}: ${payload.activity.prompt}`);
+  }
+  if (document.querySelector("#host-view").classList.contains("active")) {
+    renderParticipants(payload.room.participants);
+    renderLeaderboard(payload.room.participants);
+    renderRoundHeader(payload.room);
+    document.querySelector("#host-prompt").textContent = payload.room.prompt;
   }
 });
 
