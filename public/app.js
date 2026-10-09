@@ -17,10 +17,26 @@ function showView(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+// Direccion de una imagen subida. Vive aca y no en items-editor.js porque la
+// sala en vivo tambien la necesita: si el editor dejara de cargar, la partida
+// tiene que seguir mostrando imagenes.
+function imageUrl(id) {
+  return `${basePath}/img/${id}`;
+}
+
+// Devuelve algo con dispose para que quien muestra un aviso pueda cerrarlo antes
+// de que venza (por ejemplo al terminar de subir una imagen). Si devuelve nada,
+// el llamador que haga status.dispose() revienta y deja el aviso clavado.
 function showToast(message) {
   toast.textContent = message;
   toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 2400);
+  const timer = window.setTimeout(() => toast.classList.remove("show"), 2400);
+  return {
+    dispose() {
+      window.clearTimeout(timer);
+      toast.classList.remove("show");
+    },
+  };
 }
 
 function emitWithAck(event, payload) {

@@ -91,9 +91,9 @@ function renderRoundTabs() {
     </button>`).join("");
 }
 
-function imageUrl(id) {
-  return `${basePath}/img/${id}`;
-}
+// imageUrl vive en app.js, junto a basePath: el editor depende de app.js, no al
+// reves. Antes estaba aca y app.js la usaba para las imagenes de la sala en
+// vivo, o sea que el archivo que dibuja la partida dependia de que este cargara.
 
 function renderEditor() {
   const round = activeRound();
@@ -208,7 +208,17 @@ editorEl.addEventListener("change", async (event) => {
   const status = showToast(`Subiendo ${file.name}…`);
   try {
     const uploaded = await uploadImage(file);
-    activeRound().items[Number(picker.dataset.index)][picker.dataset.side].image = uploaded.id;
+    // El input se busca por data-file (no data-index): leer la propiedad que no
+    // existe daba undefined -> Number(undefined) es NaN -> items[NaN] es
+    // undefined y el errormataba el handler. La imagen subia igual, pero nunca
+    // se guardaba en el modelo y no se veia en ningun lado.
+    const index = Number(picker.dataset.file);
+    const round = activeRound();
+    const side = picker.dataset.side;
+    if (!round.items[index] || !round.items[index][side]) {
+      throw new Error("No se encontró dónde poner la imagen. Volvé a abrir la ronda.");
+    }
+    round.items[index][side].image = uploaded.id;
     previewUrls.set(uploaded.id, URL.createObjectURL(file));
     renderEditor();
     status.dispose();
