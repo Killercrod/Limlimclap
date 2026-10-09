@@ -206,9 +206,14 @@ editorEl.addEventListener("click", (event) => {
     renderEditor();
     return;
   }
-  const thumb = event.target.closest("[data-side]");
+  // Solo la miniatura abre el selector de archivos. Los campos de texto tambien
+  // tienen data-side, asi que con closest("[data-side]") el clic para escribir
+  // caia aqui, abria el dialogo de archivos y el campo perdia el foco al
+  // instante: no se podia escribir al lado de la imagen.
+  const thumb = event.target.closest("button.thumb[data-side]");
   if (!thumb) return;
   const row = thumb.closest("[data-index]");
+  if (!row) return;
   // Se guarda a que elemento y de que lado va la imagen, y se dispara el input
   // comun. Antes habia un input por fila y se leia su indice por atributo.
   pickerTarget = { index: Number(row.dataset.index), side: thumb.dataset.side };
