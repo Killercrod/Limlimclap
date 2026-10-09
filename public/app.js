@@ -10,6 +10,11 @@ let currentCode = "";
 let currentActivity = null;
 let selectedTile = null;
 let participantName = "";
+// Entro a la sala como participante (no como anfitrion). El avance de ronda
+// depende de esto y no de en que pantalla este: al responder se cae en la
+// pantalla de gracias, y con la pantalla activa no avanzaba nadie que ya habia
+// contestado la ronda anterior.
+let soyParticipante = false;
 let dragTile = null;
 
 function showView(id) {
@@ -85,6 +90,9 @@ document.querySelector("#create-form").addEventListener("submit", async (event) 
   }
   currentCode = result.room.code;
   currentActivity = result.activity;
+  // Quien crea la sala es el anfitrion, no un participante: si no, al avanzar de
+  // ronda se le drawnaria tambien el juego.
+  soyParticipante = false;
   discardDraftOnCreate();
   renderHost(result.room);
   showView("host-view");
@@ -201,6 +209,7 @@ document.querySelector("#copy-link").addEventListener("click", async () => {
 document.querySelector("#close-room").addEventListener("click", () => {
   socket.emit("host:close", { code: currentCode });
   currentCode = "";
+  soyParticipante = false;
   showView("home-view");
   showToast("La sala se cerró");
 });
@@ -224,6 +233,7 @@ document.querySelector("#join-form").addEventListener("submit", async (event) =>
   currentCode = result.room.code;
   currentActivity = result.activity;
   participantName = document.querySelector("#join-name").value.trim();
+  soyParticipante = true;
   startActivity();
 });
 
@@ -433,7 +443,7 @@ socket.on("room:update", (room) => {
 socket.on("round:changed", (payload) => {
   if (payload.room.code !== currentCode) return;
   currentActivity = payload.activity;
-  if (document.querySelector("#participant-view").classList.contains("active")) {
+  if (soyParticipante) {
     startActivity();
     showToast(`Ronda ${payload.activity.roundIndex + 1}: ${payload.activity.prompt}`);
   }
