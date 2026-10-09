@@ -49,6 +49,7 @@ function readDraft() {
     // confiar en la forma: un campo raro no debe impedir abrir el formulario.
     const rounds = data.rounds.map((round) => ({
       type: round?.type === "sequence" ? "sequence" : "zones",
+      title: String(round?.title ?? ""),
       prompt: typeof round?.prompt === "string" ? round.prompt : "",
       items: (Array.isArray(round?.items) ? round.items : []).map((item) => ({
         left: { text: String(item?.left?.text ?? ""), image: item?.left?.image ?? null },
@@ -87,7 +88,7 @@ function renderRoundTabs() {
   roundTabsEl.innerHTML = rounds.map((round, index) => `
     <button type="button" class="round-tab ${index === currentRound ? "active" : ""}" data-round="${index}">
       <span class="round-tab-number">${index + 1}</span>
-      <span class="round-tab-text">${escapeHtml(round.prompt || "Sin consigna")}</span>
+      <span class="round-tab-text">${escapeHtml(round.title || round.prompt || "Sin título")}</span>
     </button>`).join("");
 }
 
@@ -140,6 +141,7 @@ function renderEditor() {
   updateCounters();
   renderRoundTabs();
   scheduleSave();
+  document.querySelector("#round-title").value = round.title || "";
   document.querySelector("#round-prompt").value = round.prompt;
   document.querySelectorAll('input[name="round-type"]').forEach((input) => {
     input.checked = input.value === round.type;
@@ -150,6 +152,7 @@ function addRound() {
   if (rounds.length >= MAX_ROUNDS) return;
   rounds.push({
     type: "zones",
+    title: "",
     prompt: "",
     items: [{ left: { text: "", image: null }, right: { text: "", image: null } }],
   });
@@ -165,6 +168,12 @@ addButton.addEventListener("click", () => {
 });
 
 document.querySelector("#add-round").addEventListener("click", addRound);
+
+document.querySelector("#round-title").addEventListener("input", (event) => {
+  activeRound().title = event.target.value;
+  renderRoundTabs();
+  scheduleSave();
+});
 
 document.querySelector("#round-prompt").addEventListener("input", (event) => {
   activeRound().prompt = event.target.value;
@@ -280,6 +289,7 @@ function buildPayload() {
   return {
     rounds: rounds.map((round) => ({
       type: round.type,
+      title: (round.title || "").trim(),
       prompt: round.prompt.trim(),
       ...(round.type === "zones"
         ? { pairs: round.items.map((item) => ({

@@ -66,6 +66,8 @@
 
           <hr class="form-separator">
 
+          <label class="field-label" for="round-title">Título de la ronda</label>
+          <input class="text-input" id="round-title" name="title" maxlength="80" placeholder="Ej. Países y capitales">
           <label class="field-label" for="round-prompt">Consigna de esta ronda</label>
           <input class="text-input" id="round-prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición">
 
@@ -141,7 +143,12 @@
                 <figcaption>Escaneá para entrar</figcaption>
               </figure>
             </div>
-            <div class="host-activity"><span class="eyebrow">CONSIGNA</span><h2 id="host-prompt"></h2></div>
+            <div class="host-activity">
+              <span class="eyebrow">RONDA EN CURSO</span>
+              <h2 id="host-title"></h2>
+              <span class="eyebrow">CONSIGNA</span>
+              <p id="host-prompt"></p>
+            </div>
           </article>
           <article class="panel responses-panel">
             <div class="response-heading"><div><span class="eyebrow">PARTICIPANTES</span><h2>Respuestas</h2></div><span class="count-pill" id="participant-count">0</span></div>
@@ -159,7 +166,8 @@
       <section class="view live-view participant-view" id="participant-view">
         <div class="participant-heading">
           <span class="eyebrow"><span class="live-dot"></span> <span id="participant-room-label">ACTIVIDAD EN DIRECTO</span></span>
-          <h1 id="participant-prompt"></h1>
+          <h1 id="participant-title"></h1>
+          <p id="participant-prompt"></p>
           <p id="participant-instructions"></p>
         </div>
         <div id="game-area" class="panel game-panel"></div>

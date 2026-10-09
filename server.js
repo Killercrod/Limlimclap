@@ -195,8 +195,12 @@ function cleanImageId(value) {
 
 function validateActivity(input) {
   const type = input?.type;
+  // Titulo y consigna son dos cosas: el titulo nombra la ronda (lo que sale en
+  // la pestaña y de encabezado) y la consigna dice que hay que hacer. Antes iban
+  // juntos en un solo campo y quedaban pegados.
+  const title = cleanText(input?.title, 80);
   const prompt = cleanText(input?.prompt, 240);
-  if (!prompt) return { error: "Escribe una consigna para la actividad." };
+  if (!prompt) return { error: "Escribe la consigna de la actividad." };
 
   if (type === "zones") {
     if (!Array.isArray(input.pairs) || input.pairs.length < 2 || input.pairs.length > 20) {
@@ -224,7 +228,7 @@ function validateActivity(input) {
     if (used.size > IMAGE_MAX_PER_ACTIVITY) {
       return { error: `Máximo ${IMAGE_MAX_PER_ACTIVITY} imágenes por actividad.` };
     }
-    return { activity: { type, prompt, pairs } };
+    return { activity: { type, title, prompt, pairs } };
   }
 
   if (type === "sequence") {
@@ -240,7 +244,7 @@ function validateActivity(input) {
     if (new Set(items.map((item) => item.toLowerCase())).size !== items.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
     }
-    return { activity: { type, prompt, items, itemImages } };
+    return { activity: { type, title, prompt, items, itemImages } };
   }
 
   return { error: "Elige un tipo de actividad válido." };
@@ -293,6 +297,7 @@ function roomSummary(room) {
     code: room.code,
     roundIndex: room.roundIndex,
     roundsCount: room.rounds.length,
+    title: room.rounds[room.roundIndex].title || room.rounds[room.roundIndex].prompt,
     prompt: room.rounds[room.roundIndex].prompt,
     type: room.rounds[room.roundIndex].type,
     participants: [...room.participants.values()].map((participant) => ({
@@ -312,6 +317,9 @@ function participantActivity(room) {
   const base = {
     roundIndex: room.roundIndex,
     roundsCount: room.rounds.length,
+    // Si la ronda se creo sin titulo (o es de una version anterior), se cae al
+    // texto de la consigna para que no quede un hueco vacio arriba.
+    title: activity.title || activity.prompt,
   };
   if (activity.type === "zones") {
     const labels = activity.pairs.map((pair) => ({ text: pair.label, image: pair.labelImage }));
@@ -525,4 +533,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { answerScore, validateActivity };
+module.exports = { answerScore, validateActivity, participantActivity };

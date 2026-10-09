@@ -95,6 +95,7 @@ function renderHost(room) {
   const link = new URL(window.location.href);
   link.search = `?join=${room.code}`;
   document.querySelector("#share-link").textContent = link.href;
+  document.querySelector("#host-title").textContent = headingTitle(room);
   document.querySelector("#host-prompt").textContent = room.prompt;
   renderRoomQr(link.href);
   renderParticipants(room.participants);
@@ -105,6 +106,16 @@ function renderHost(room) {
 // El QR lleva el mismo enlace que el boton de copiar, con el codigo ya puesto:
 // el grupo entra escaneando y no tiene que escribirlo. Si la libreria no esta o
 // falla, el codigo grande sigue estando arriba, asi que la sala no se rompe.
+// Que va de encabezado. El servidor ya cae a la consigna cuando el titulo
+// viene vacio, pero tambien se resuelve aca para los casos que llegan por el
+// socket sin pasar por ahi.
+function headingTitle(source) {
+  const title = source?.title?.trim();
+  if (title) return title;
+  const prompt = source?.prompt?.trim();
+  return prompt || "";
+}
+
 function renderRoomQr(text) {
   const target = document.querySelector("#room-qr");
   if (!target) return;
@@ -221,6 +232,7 @@ function startActivity() {
     ? `SALA ${currentCode} · RONDA ${currentActivity.roundIndex + 1} de ${currentActivity.roundsCount}`
     : `SALA ${currentCode}`;
   document.querySelector("#participant-room-label").textContent = roundsLabel;
+  document.querySelector("#participant-title").textContent = headingTitle(currentActivity);
   document.querySelector("#participant-prompt").textContent = currentActivity.prompt;
   document.querySelector("#game-error").textContent = "";
   document.querySelector("#game-feedback").textContent = "Arrastra las piezas o tócalas para colocarlas.";
@@ -410,6 +422,7 @@ socket.on("room:update", (room) => {
   renderParticipants(room.participants);
   renderLeaderboard(room.participants);
   renderRoundHeader(room);
+  document.querySelector("#host-title").textContent = headingTitle(room);
   document.querySelector("#host-prompt").textContent = room.prompt;
 });
 
@@ -426,6 +439,7 @@ socket.on("round:changed", (payload) => {
     renderParticipants(payload.room.participants);
     renderLeaderboard(payload.room.participants);
     renderRoundHeader(payload.room);
+    document.querySelector("#host-title").textContent = headingTitle(payload.room);
     document.querySelector("#host-prompt").textContent = payload.room.prompt;
   }
 });

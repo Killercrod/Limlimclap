@@ -5,6 +5,7 @@ const { answerScore, validateActivity } = require("../server");
 test("validates and normalizes a zone-matching activity", () => {
   const result = validateActivity({
     type: "zones",
+    title: "  Países y capitales  ",
     prompt: "  Relaciona  ",
     pairs: [
       { label: " París ", target: " Francia " },
@@ -13,10 +14,12 @@ test("validates and normalizes a zone-matching activity", () => {
   });
 
   // Las imagenes son opcionales: sin id quedan en null en vez de desaparecer,
-  // para que el cliente siempre encuentre el mismo campo.
+  // para que el cliente siempre encuentre el mismo campo. El titulo tambien es
+  // opcional: sin el queda vacio y el cliente cae a la consigna.
   assert.deepEqual(result, {
     activity: {
       type: "zones",
+      title: "Países y capitales",
       prompt: "Relaciona",
       pairs: [
         { label: "París", target: "Francia", labelImage: null, targetImage: null },
@@ -24,6 +27,19 @@ test("validates and normalizes a zone-matching activity", () => {
       ],
     },
   });
+});
+
+test("el titulo es opcional y la consigna no", () => {
+  const base = {
+    type: "zones",
+    pairs: [{ label: "A", target: "B" }, { label: "C", target: "D" }],
+  };
+  const sinTitulo = validateActivity({ ...base, prompt: "Relaciona" });
+  assert.equal(sinTitulo.error, undefined);
+  assert.equal(sinTitulo.activity.title, "");
+
+  const sinConsigna = validateActivity({ ...base, title: "Con titulo" });
+  assert.equal(sinConsigna.error, "Escribe la consigna de la actividad.");
 });
 
 test("descarta referencias de imagen que no existen", () => {
