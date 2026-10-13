@@ -1,6 +1,19 @@
 # Limlimclap
 
-Aplicación web colaborativa para actividades interactivas de arrastrar y soltar. Un anfitrión crea una sala y comparte su código o enlace; participantes externos entran sin registrarse.
+Aplicación web colaborativa para actividades interactivas de arrastrar y soltar. Un anfitrión crea una sala y comparte su código, QR o enlace; participantes externos entran sin registrarse.
+
+## Funciones incluidas
+
+- Dos modos de juego: **colocar en zonas** y **ordenar secuencia**.
+- Flujo en directo con Socket.IO: sala de espera, inicio del anfitrión, cierre y resultados.
+- **Temporizador opcional** por actividad.
+- **Ranking en vivo** y métricas por elemento para el anfitrión.
+- **Código QR** de acceso por sala.
+- Reconexión de participantes por token de sesión.
+- Sonido opcional, confeti, feedback de aciertos por elemento, modo proyector.
+- Plantillas rápidas para crear actividades.
+- Tema de color por actividad.
+- Metaetiquetas SEO/OG, favicon y página de privacidad básica.
 
 ## Empezar en local
 
@@ -11,23 +24,20 @@ npm install
 npm start
 ```
 
-Abre `http://localhost:3000`. Para probar la participación en tiempo real, abre el enlace de la sala en otra ventana o dispositivo conectado al mismo servidor.
-
-## Actividades disponibles
-
-- **Colocar en zonas:** escribe una relación por línea con el formato `Elemento → Zona`. Se pueden repetir zonas.
-- **Ordenar secuencia:** escribe un elemento por línea y en el orden correcto; el orden se mezcla para cada participante.
-
-En móvil, toca un elemento y después la zona o posición para colocarlo. En ordenador también puedes arrastrar y soltar.
-
-## Publicar para participantes externos
-
-Despliega este servidor Node.js en un servicio accesible por Internet que admita conexiones WebSocket, y comparte el enlace generado por la sala. Configura el servicio para ejecutar `npm start` y proporcionar el puerto mediante `PORT` si corresponde. No se necesita una cuenta de participante.
-
-Las salas y respuestas se guardan en memoria y se eliminan al cerrar la sala, desconectarse el anfitrión o reiniciar el servidor. Para esta primera versión, usa una sola instancia del servidor y mantén abierta la pestaña del anfitrión mientras dure la actividad. No hay persistencia, cuentas de anfitrión ni moderación de participantes.
+Abre `http://localhost:3000`.
 
 ## Pruebas
 
 ```sh
 npm test
 ```
+
+## Publicación para participantes externos
+
+Despliega este servidor Node.js en un servicio accesible por Internet que admita conexiones WebSocket, y comparte el enlace generado por la sala. Configura el servicio para ejecutar `npm start` y proporcionar el puerto mediante `PORT` si corresponde.
+
+## Limitaciones actuales
+
+- Las salas y respuestas se guardan en memoria; se eliminan al cerrar sala, expirar, desconectarse el anfitrión por más de 90 segundos o reiniciar el servidor.
+- No hay cuentas persistentes de anfitrión ni base de datos.
+- El host token vive en `sessionStorage` del navegador; si se cierra la sesión del navegador se pierde.

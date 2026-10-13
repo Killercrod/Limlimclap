@@ -1,11 +1,47 @@
 const socket = io();
 const views = [...document.querySelectorAll(".view")];
 const toast = document.querySelector("#toast");
+
+const templates = [
+  {
+    name: "Capitales",
+    type: "zones",
+    prompt: "Relaciona cada ciudad con su país",
+    entries: "París → Francia\nTokio → Japón\nLima → Perú\nBogotá → Colombia",
+    timeLimit: 60,
+    theme: "green",
+  },
+  {
+    name: "Ciclo",
+    type: "sequence",
+    prompt: "Ordena el ciclo del agua",
+    entries: "Evaporación\nCondensación\nPrecipitación\nInfiltración",
+    timeLimit: 120,
+    theme: "blue",
+  },
+  {
+    name: "Método científico",
+    type: "sequence",
+    prompt: "Ordena el método científico",
+    entries: "Observación\nHipótesis\nExperimentación\nAnálisis\nConclusión",
+    timeLimit: 180,
+    theme: "violet",
+  },
+];
+
 let currentCode = "";
+let hostToken = sessionStorage.getItem("limlimclap:host-token") || "";
+let participantToken = sessionStorage.getItem("limlimclap:participant-token") || "";
 let currentActivity = null;
 let selectedTile = null;
 let participantName = "";
 let dragTile = null;
+let soundEnabled = localStorage.getItem("limlimclap:sound") === "1";
+let timerInterval = null;
+let currentStatus = "";
+let confettiBurstDone = false;
+
+const audioCtx = typeof AudioContext !== "undefined" ? new AudioContext() : null;
 
 function showView(id) {
   views.forEach((view) => view.classList.toggle("active", view.id === id));
@@ -20,7 +56,7 @@ function showToast(message) {
 
 function emitWithAck(event, payload) {
   return new Promise((resolve) => {
-    socket.timeout(8000).emit(event, payload, (error, response) => {
+    socket.timeout(9000).emit(event, payload, (error, response) => {
       if (error) resolve({ error: "No pudimos conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo." });
       else resolve(response);
     });
@@ -31,129 +67,278 @@ function getSelectedType() {
   return document.querySelector('input[name="activity-type"]:checked').value;
 }
 
-document.querySelector("#show-create").addEventListener("click", () => showView("create-view"));
-document.querySelector("#show-join").addEventListener("click", () => showView("join-view"));
-document.querySelectorAll("[data-go]").forEach((button) => {
-  button.addEventListener("click", () => showView(button.dataset.go));
-});
-
-document.querySelectorAll('input[name="activity-type"]').forEach((input) => {
-  input.addEventListener("change", () => {
-    document.querySelectorAll(".type-option").forEach((option) => option.classList.remove("selected"));
-    input.closest(".type-option").classList.add("selected");
-    const isZones = input.value === "zones";
-    document.querySelector("#entries-label").textContent = isZones ? "Elementos y respuestas" : "Elementos en el orden correcto";
-    document.querySelector("#entries").placeholder = isZones
-      ? "París → Francia\nTokio → Japón\nLima → Perú"
-      : "Primero\nDespués\nAl final";
-    document.querySelector("#entries-hint").innerHTML = isZones
-      ? 'Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.'
-      : "Escribe un elemento por línea, en el orden correcto. Se mezclarán para tus participantes.";
-  });
-});
-
-document.querySelector("#create-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const errorElement = document.querySelector("#create-error");
-  errorElement.textContent = "";
-  const type = getSelectedType();
-  const lines = document.querySelector("#entries").value.split("\n").map((line) => line.trim()).filter(Boolean);
-  const payload = {
-    type,
-    prompt: document.querySelector("#prompt").value,
-    ...(type === "zones"
-      ? { pairs: lines.map((line) => {
-          const separator = line.includes("→") ? "→" : "->";
-          const parts = line.split(separator);
-          return { label: parts[0]?.trim(), target: parts.slice(1).join(separator).trim() };
-        }) }
-      : { items: lines }),
-  };
-  const result = await emitWithAck("host:create", payload);
-  if (result?.error) {
-    errorElement.textContent = result.error;
-    return;
-  }
-  currentCode = result.room.code;
-  currentActivity = result.activity;
-  renderHost(result.room);
-  showView("host-view");
-});
-
-function renderHost(room) {
-  document.querySelector("#host-code").textContent = room.code;
-  const link = new URL(window.location.href);
-  link.search = `?join=${room.code}`;
-  document.querySelector("#share-link").textContent = link.href;
-  document.querySelector("#host-prompt").textContent = room.prompt;
-  renderParticipants(room.participants);
+function getSelectedTheme() {
+  return document.querySelector('input[name="theme"]:checked').value;
 }
 
-function renderParticipants(participants) {
-  document.querySelector("#participant-count").textContent = participants.length;
-  document.querySelector("#empty-responses").hidden = participants.length > 0;
-  document.querySelector("#participant-list").innerHTML = participants.map((participant) => `
-    <div class="participant-row">
-      <span class="participant-avatar">${escapeHtml(participant.name.slice(0, 1).toUpperCase())}</span>
-      <span>${escapeHtml(participant.name)}</span>
-      <span class="participant-status ${participant.submitted ? "done" : ""}">${participant.submitted ? `Respondió · ${participant.score.correct}/${participant.score.total}` : participant.connected ? "Conectado" : "Desconectado"}</span>
-    </div>`).join("");
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme || "green";
 }
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
   })[character]);
 }
 
-document.querySelector("#copy-link").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText(document.querySelector("#share-link").textContent);
-    showToast("Enlace copiado");
-  } catch {
-    showToast("No se pudo copiar. Puedes seleccionar y copiar el enlace.");
-  }
-});
+function playTone(type = "ok") {
+  if (!soundEnabled || !audioCtx) return;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  const now = audioCtx.currentTime;
+  const gain = audioCtx.createGain();
+  gain.connect(audioCtx.destination);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.06, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.3);
+  const osc = audioCtx.createOscillator();
+  osc.type = type === "ok" ? "triangle" : "square";
+  osc.frequency.setValueAtTime(type === "ok" ? 830 : 300, now);
+  osc.frequency.exponentialRampToValueAtTime(type === "ok" ? 1240 : 210, now + 0.25);
+  osc.connect(gain);
+  osc.start(now);
+  osc.stop(now + 0.35);
+}
 
-document.querySelector("#close-room").addEventListener("click", () => {
-  socket.emit("host:close", { code: currentCode });
-  currentCode = "";
-  showView("home-view");
-  showToast("La sala se cerró");
-});
-
-document.querySelector("#join-code").addEventListener("input", (event) => {
-  event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-});
-
-document.querySelector("#join-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const errorElement = document.querySelector("#join-error");
-  errorElement.textContent = "";
-  const result = await emitWithAck("participant:join", {
-    code: document.querySelector("#join-code").value,
-    name: document.querySelector("#join-name").value,
+function renderTemplates() {
+  const row = document.querySelector("#template-row");
+  row.innerHTML = templates
+    .map(
+      (template, index) => `<button class="template-pill" type="button" data-template="${index}">${escapeHtml(template.name)}</button>`,
+    )
+    .join("");
+  row.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const template = templates[Number(button.dataset.template)];
+      document.querySelector(`#type-${template.type}`).checked = true;
+      document.querySelector("#prompt").value = template.prompt;
+      document.querySelector("#entries").value = template.entries;
+      document.querySelector(`#time-limit`).value = String(template.timeLimit);
+      document.querySelector(`input[name='theme'][value='${template.theme}']`).checked = true;
+      setTypeUI(template.type);
+      showToast(`Plantilla "${template.name}" cargada`);
+    });
   });
-  if (result?.error) {
-    errorElement.textContent = result.error;
+}
+
+function setTypeUI(type) {
+  document.querySelectorAll(".type-option").forEach((option) => option.classList.remove("selected"));
+  document.querySelector(`#type-${type}`).closest(".type-option").classList.add("selected");
+  const isZones = type === "zones";
+  document.querySelector("#entries-label").textContent = isZones ? "Elementos y respuestas" : "Elementos en el orden correcto";
+  document.querySelector("#entries").placeholder = isZones
+    ? "París → Francia\nTokio → Japón\nLima → Perú"
+    : "Primero\nDespués\nAl final";
+  document.querySelector("#entries-hint").innerHTML = isZones
+    ? 'Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.'
+    : "Escribe un elemento por línea, en el orden correcto. Se mezclarán para tus participantes.";
+}
+
+function parseEntries(type) {
+  const lines = document
+    .querySelector("#entries")
+    .value.split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (type === "zones") {
+    return lines.map((line) => {
+      const separator = line.includes("→") ? "→" : "->";
+      const parts = line.split(separator);
+      return { label: parts[0]?.trim(), target: parts.slice(1).join(separator).trim() };
+    });
+  }
+  return lines;
+}
+
+function mountConfetti() {
+  const host = document.createElement("div");
+  host.className = "confetti-host";
+  for (let i = 0; i < 60; i += 1) {
+    const piece = document.createElement("i");
+    piece.className = `p${i % 10}`;
+    host.append(piece);
+  }
+  document.body.append(host);
+  window.setTimeout(() => host.remove(), 2600);
+}
+
+function formatTime(ms) {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = String(Math.floor(total / 60)).padStart(2, "0");
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function setTimer(labelId, remainingMs) {
+  const node = document.querySelector(labelId);
+  if (!node) return;
+  if (remainingMs === null || remainingMs === undefined) {
+    node.hidden = true;
+    node.textContent = "";
     return;
   }
-  currentCode = result.room.code;
-  currentActivity = result.activity;
-  participantName = document.querySelector("#join-name").value.trim();
-  startActivity();
-});
+  node.hidden = false;
+  node.textContent = `⏱ ${formatTime(remainingMs)}`;
+}
 
-function startActivity() {
-  document.querySelector("#participant-room-label").textContent = `SALA ${currentCode}`;
-  document.querySelector("#participant-prompt").textContent = currentActivity.prompt;
-  document.querySelector("#game-error").textContent = "";
-  document.querySelector("#game-feedback").textContent = "Arrastra las piezas o tócalas para colocarlas.";
-  document.querySelector("#submit-answer").disabled = false;
-  document.querySelector("#submit-answer").textContent = "Enviar respuesta ↗";
-  if (currentActivity.type === "zones") renderZones();
-  else renderSequence();
-  showView("participant-view");
+function startTicker(getRemaining, callback) {
+  clearInterval(timerInterval);
+  timerInterval = setInterval(() => {
+    const ms = getRemaining();
+    callback(ms);
+  }, 250);
+}
+
+function stopTicker() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+function updateSoundButton() {
+  const button = document.querySelector("#sound-toggle");
+  button.textContent = soundEnabled ? "🔊" : "🔇";
+  button.setAttribute("aria-pressed", String(soundEnabled));
+  button.setAttribute("aria-label", soundEnabled ? "Desactivar sonido" : "Activar sonido");
+}
+
+function saveTokens() {
+  if (hostToken) sessionStorage.setItem("limlimclap:host-token", hostToken);
+  if (participantToken) sessionStorage.setItem("limlimclap:participant-token", participantToken);
+}
+
+function clearParticipantToken() {
+  participantToken = "";
+  sessionStorage.removeItem("limlimclap:participant-token");
+}
+
+function renderParticipants(participants) {
+  const list = document.querySelector("#participant-list");
+  const scored = participants
+    .filter((participant) => participant.score)
+    .sort((a, b) => b.score.correct - a.score.correct)
+    .concat(participants.filter((participant) => !participant.score));
+
+  document.querySelector("#participant-count").textContent = participants.length;
+  document.querySelector("#empty-responses").hidden = participants.length > 0;
+
+  list.innerHTML = scored
+    .map((participant, index) => {
+      const position = participant.score ? `<span class="position">#${index + 1}</span>` : "";
+      const status = participant.score
+        ? `Respondió · ${participant.score.correct}/${participant.score.total}`
+        : participant.connected
+          ? "Conectado"
+          : "Desconectado";
+      return `<div class="participant-row ${participant.score ? "submitted" : ""}">
+        <span class="participant-avatar">${escapeHtml(participant.name.slice(0, 1).toUpperCase())}</span>
+        <span class="participant-name">${escapeHtml(participant.name)}</span>
+        ${position}
+        <span class="participant-status ${participant.score ? "done" : ""}">${status}</span>
+        <button class="icon-button kick" type="button" data-kick="${participant.id}" aria-label="Retirar ${escapeHtml(participant.name)}">✕</button>
+      </div>`;
+    })
+    .join("");
+
+  list.querySelectorAll("[data-kick]").forEach((button) => {
+    button.addEventListener("click", () => socket.emit("host:kick", { id: button.dataset.kick }));
+  });
+}
+
+function renderStats(stats) {
+  const panel = document.querySelector("#stats-panel");
+  const list = document.querySelector("#stats-list");
+  if (!stats?.length) {
+    panel.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  panel.hidden = false;
+  list.innerHTML = stats
+    .map((entry) => {
+      const percent = entry.answered ? Math.round((entry.correct / entry.answered) * 100) : 0;
+      return `<div class="stat-row">
+        <div class="stat-label" title="${escapeHtml(entry.name)}">${escapeHtml(entry.name)}</div>
+        <progress class="stat-bar" max="100" value="${percent}" aria-label="Aciertos en ${escapeHtml(entry.name)}"></progress>
+        <strong>${percent}%</strong>
+      </div>`;
+    })
+    .join("");
+}
+
+function renderHost(room) {
+  currentCode = room.code;
+  applyTheme(room.theme);
+  currentStatus = room.status;
+  document.querySelector("#host-code").textContent = room.code;
+  document.querySelector("#host-prompt").textContent = room.prompt;
+  const link = new URL(window.location.href);
+  link.search = `?join=${room.code}`;
+  document.querySelector("#share-link").textContent = link.href;
+  document.querySelector("#host-qr").src = `/qr/${room.code}.svg`;
+  renderParticipants(room.participants);
+  renderStats(room.stats);
+
+  const statusLabel = room.status === "lobby" ? "SALA EN ESPERA" : room.status === "live" ? "SALA EN DIRECTO" : "SALA FINALIZADA";
+  document.querySelector("#host-status").textContent = statusLabel;
+  document.querySelector("#host-title").textContent =
+    room.status === "lobby" ? "Tu actividad está lista." : room.status === "live" ? "Actividad en progreso" : "Actividad finalizada";
+  document.querySelector("#host-subtitle").textContent =
+    room.status === "lobby"
+      ? "Comparte el código o el QR y empieza cuando todos estén dentro."
+      : room.status === "live"
+        ? "Las respuestas están llegando en directo."
+        : "Puedes reiniciar para volver a jugar con el mismo código.";
+
+  document.querySelector("#start-activity").hidden = room.status !== "lobby";
+  document.querySelector("#end-activity").hidden = room.status !== "live";
+  document.querySelector("#reset-activity").hidden = room.status === "live";
+
+  setTimer("#host-timer", room.remainingMs);
+  if (room.remainingMs != null) {
+    const deadline = Date.now() + room.remainingMs;
+    startTicker(
+      () => Math.max(0, deadline - Date.now()),
+      (ms) => setTimer("#host-timer", ms),
+    );
+  } else {
+    stopTicker();
+  }
+}
+
+function renderLobby(state) {
+  currentStatus = "lobby";
+  applyTheme(state.theme);
+  document.querySelector("#lobby-code").textContent = state.code;
+  document.querySelector("#lobby-title").textContent = `¡${participantName || state.name}, ya estás dentro!`;
+  showView("lobby-view");
+}
+
+function selectTile(tile) {
+  document.querySelectorAll(".tile[aria-pressed='true']").forEach((activeTile) =>
+    activeTile.setAttribute("aria-pressed", "false"),
+  );
+  selectedTile = tile;
+  if (tile) tile.setAttribute("aria-pressed", "true");
+}
+
+function placeTile(tile, target) {
+  if (target.classList.contains("sequence-slot")) {
+    const existingTile = target.querySelector(".tile");
+    if (existingTile && existingTile !== tile) {
+      document.querySelector(".sequence-bank").append(existingTile);
+      existingTile.classList.remove("in-target");
+    }
+  }
+  target.append(tile);
+  tile.classList.add("in-target");
+  tile.classList.add("pop");
+  window.setTimeout(() => tile.classList.remove("pop"), 220);
+  selectTile(null);
+  updateFeedback();
+  playTone("ok");
 }
 
 function makeTile(label, index) {
@@ -164,6 +349,7 @@ function makeTile(label, index) {
   tile.dataset.label = label;
   tile.setAttribute("aria-pressed", "false");
   tile.innerHTML = `<span class="tile-number">${index + 1}</span><span>${escapeHtml(label)}</span>`;
+
   tile.addEventListener("click", () => {
     if (selectedTile === tile) {
       selectTile(null);
@@ -180,6 +366,7 @@ function makeTile(label, index) {
       updateFeedback();
     }
   });
+
   tile.addEventListener("dragstart", () => {
     dragTile = tile;
     tile.classList.add("dragging");
@@ -189,12 +376,6 @@ function makeTile(label, index) {
     dragTile = null;
   });
   return tile;
-}
-
-function selectTile(tile) {
-  document.querySelectorAll(".tile[aria-pressed='true']").forEach((activeTile) => activeTile.setAttribute("aria-pressed", "false"));
-  selectedTile = tile;
-  if (tile) tile.setAttribute("aria-pressed", "true");
 }
 
 function attachDropTarget(target, onDrop) {
@@ -210,24 +391,14 @@ function attachDropTarget(target, onDrop) {
   });
 }
 
-function placeTile(tile, target) {
-  if (target.classList.contains("sequence-slot")) {
-    const existingTile = target.querySelector(".tile");
-    if (existingTile && existingTile !== tile) {
-      document.querySelector(".sequence-bank").append(existingTile);
-      existingTile.classList.remove("in-target");
-    }
-  }
-  target.append(tile);
-  tile.classList.add("in-target");
-  selectTile(null);
-  updateFeedback();
-}
-
 function renderZones() {
   const area = document.querySelector("#game-area");
   area.className = "panel game-panel";
-  area.innerHTML = `<div class="game-columns"><section><h2 class="game-section-title">Elementos</h2><div class="tile-bank" id="tile-bank"></div></section><section><h2 class="game-section-title">Zonas</h2><div class="target-columns" id="target-columns"></div></section></div>`;
+  area.innerHTML = `
+    <div class="game-columns">
+      <section><h2 class="game-section-title">Elementos</h2><div class="tile-bank" id="tile-bank"></div></section>
+      <section><h2 class="game-section-title">Zonas</h2><div class="target-columns" id="target-columns"></div></section>
+    </div>`;
   const bank = area.querySelector("#tile-bank");
   currentActivity.labels.forEach((label, index) => bank.append(makeTile(label, index)));
   currentActivity.targets.forEach((target) => {
@@ -251,7 +422,11 @@ function renderZones() {
 function renderSequence() {
   const area = document.querySelector("#game-area");
   area.className = "panel game-panel sequence-game";
-  area.innerHTML = `<h2 class="game-section-title">Tu secuencia</h2><div id="sequence-slots"></div><h2 class="game-section-title">Elementos disponibles</h2><div class="sequence-bank" id="sequence-bank"></div>`;
+  area.innerHTML = `
+    <h2 class="game-section-title">Tu secuencia</h2>
+    <div id="sequence-slots"></div>
+    <h2 class="game-section-title">Elementos disponibles</h2>
+    <div class="sequence-bank" id="sequence-bank"></div>`;
   const slots = area.querySelector("#sequence-slots");
   currentActivity.items.forEach((_, index) => {
     const slot = document.createElement("div");
@@ -274,9 +449,10 @@ function renderSequence() {
 
 function updateFeedback() {
   const feedback = document.querySelector("#game-feedback");
-  const filled = currentActivity.type === "zones"
-    ? [...document.querySelectorAll(".target-box")].reduce((total, box) => total + box.querySelectorAll(".tile").length, 0)
-    : [...document.querySelectorAll(".sequence-slot")].filter((slot) => slot.querySelector(".tile")).length;
+  const filled =
+    currentActivity.type === "zones"
+      ? [...document.querySelectorAll(".target-box")].reduce((total, box) => total + box.querySelectorAll(".tile").length, 0)
+      : [...document.querySelectorAll(".sequence-slot")].filter((slot) => slot.querySelector(".tile")).length;
   const total = currentActivity.type === "zones" ? currentActivity.labels.length : currentActivity.items.length;
   feedback.textContent = `${filled} de ${total} elementos colocados`;
 }
@@ -285,7 +461,9 @@ function getAnswer() {
   if (currentActivity.type === "zones") {
     const answer = Object.create(null);
     document.querySelectorAll(".target-box").forEach((box) => {
-      box.querySelectorAll(".tile").forEach((tile) => { answer[tile.dataset.label] = box.dataset.target; });
+      box.querySelectorAll(".tile").forEach((tile) => {
+        answer[tile.dataset.label] = box.dataset.target;
+      });
     });
     return Object.keys(answer).length === currentActivity.labels.length ? answer : null;
   }
@@ -294,46 +472,290 @@ function getAnswer() {
   return slots.map((slot) => slot.querySelector(".tile").dataset.label);
 }
 
-document.querySelector("#submit-answer").addEventListener("click", async () => {
-  const errorElement = document.querySelector("#game-error");
-  errorElement.textContent = "";
-  const answer = getAnswer();
-  if (!answer) {
-    errorElement.textContent = "Coloca todos los elementos antes de enviar.";
-    return;
-  }
-  const result = await emitWithAck("participant:submit", { code: currentCode, answer });
-  if (result?.error) {
-    errorElement.textContent = result.error;
-    return;
-  }
-  showResult(result.score);
-});
+function renderResultsList(results) {
+  const list = document.querySelector("#result-feedback");
+  list.innerHTML = (results || [])
+    .map(
+      (item) => `<li class="${item.ok ? "ok" : "bad"}">
+        <span>${escapeHtml(item.name)}</span>
+        <span>${item.ok ? "✓" : `✕ ${escapeHtml(item.chosen)} → ${escapeHtml(item.expected)}`}</span>
+      </li>`,
+    )
+    .join("");
+}
 
-function showResult(score) {
+function renderFinalBoard(board, rank, answered) {
+  const container = document.querySelector("#final-board");
+  const list = document.querySelector("#final-board-list");
+  if (!board?.length) {
+    container.hidden = true;
+    list.innerHTML = "";
+    return;
+  }
+  container.hidden = false;
+  list.innerHTML = board
+    .map((entry, index) => `<li><span>#${index + 1} ${escapeHtml(entry.name)}</span><strong>${entry.correct}/${entry.total}</strong></li>`)
+    .join("");
+  if (rank) {
+    document.querySelector("#result-message").textContent = `Quedaste en el puesto #${rank} de ${answered} participantes con respuesta.`;
+  }
+}
+
+function showResult(score, results, context = {}) {
+  if (!confettiBurstDone) {
+    mountConfetti();
+    confettiBurstDone = true;
+  }
+  playTone("ok");
+  document.querySelector("#result-mark").textContent = score.correct === score.total ? "🏆" : "✓";
+  document.querySelector("#result-eyebrow").textContent = context.ended ? "ACTIVIDAD FINALIZADA" : "RESPUESTA ENVIADA";
   document.querySelector("#result-title").textContent = `¡Gracias, ${participantName}!`;
-  document.querySelector("#result-message").textContent = "Tu respuesta ya llegó al anfitrión.";
+  if (!context.ended) {
+    document.querySelector("#result-message").textContent = "Tu respuesta ya llegó al anfitrión.";
+  }
   document.querySelector("#result-score").textContent = `${score.correct} de ${score.total} correctos`;
+  renderResultsList(results);
+  renderFinalBoard(context.board, context.rank, context.answered);
+  document.querySelector("#leave-room").hidden = !context.ended;
   showView("result-view");
 }
 
-socket.on("room:update", (room) => {
-  if (room.code === currentCode && document.querySelector("#host-view").classList.contains("active")) {
-    renderParticipants(room.participants);
+function startActivity(state) {
+  currentStatus = "live";
+  confettiBurstDone = false;
+  applyTheme(state.theme);
+  currentActivity = state.activity;
+  document.querySelector("#participant-room-label").textContent = `SALA ${state.code}`;
+  document.querySelector("#participant-prompt").textContent = currentActivity.prompt;
+  document.querySelector("#game-error").textContent = "";
+  document.querySelector("#game-feedback").textContent = "Arrastra las piezas o tócalas para colocarlas.";
+  document.querySelector("#submit-answer").disabled = false;
+  if (currentActivity.type === "zones") renderZones();
+  else renderSequence();
+  setTimer("#participant-timer", state.remainingMs);
+  if (state.remainingMs != null) {
+    const deadline = Date.now() + state.remainingMs;
+    startTicker(
+      () => Math.max(0, deadline - Date.now()),
+      (ms) => {
+        setTimer("#participant-timer", ms);
+        if (ms === 0 && currentStatus === "live") document.querySelector("#submit-answer").disabled = true;
+      },
+    );
   }
-});
-
-socket.on("room:closed", () => {
-  if (document.querySelector("#participant-view").classList.contains("active")) {
-    showView("home-view");
-    showToast("El anfitrión cerró esta actividad");
-  }
-});
-
-const inviteCode = new URLSearchParams(window.location.search).get("join");
-if (inviteCode) {
-  document.querySelector("#join-code").value = inviteCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
-  showView("join-view");
+  showView("participant-view");
 }
 
-document.querySelector("#entries").placeholder = "París → Francia\nTokio → Japón\nLima → Perú";
+function applyParticipantState(state) {
+  currentCode = state.code;
+  participantName = state.name || participantName;
+  applyTheme(state.theme);
+  if (state.status === "lobby") {
+    stopTicker();
+    renderLobby(state);
+    return;
+  }
+  if (state.status === "live" && state.activity && !state.score) {
+    startActivity(state);
+    return;
+  }
+  if (state.score) {
+    stopTicker();
+    showResult(state.score, state.results, {
+      ended: state.status === "ended",
+      board: state.leaderboard,
+      rank: state.rank,
+      answered: state.answered,
+    });
+    return;
+  }
+  if (state.status === "ended") {
+    stopTicker();
+    document.querySelector("#result-mark").textContent = "⏱";
+    document.querySelector("#result-eyebrow").textContent = "ACTIVIDAD FINALIZADA";
+    document.querySelector("#result-title").textContent = "El tiempo terminó";
+    document.querySelector("#result-message").textContent = "No alcanzaste a enviar respuesta esta vez.";
+    document.querySelector("#result-score").textContent = "";
+    renderResultsList([]);
+    renderFinalBoard(state.leaderboard, null, state.answered);
+    document.querySelector("#leave-room").hidden = false;
+    showView("result-view");
+  }
+}
+
+function setupEvents() {
+  document.querySelector("#show-create").addEventListener("click", () => showView("create-view"));
+  document.querySelector("#show-join").addEventListener("click", () => showView("join-view"));
+  document.querySelectorAll("[data-go]").forEach((button) => {
+    button.addEventListener("click", () => showView(button.dataset.go));
+  });
+
+  document.querySelectorAll('input[name="activity-type"]').forEach((input) => {
+    input.addEventListener("change", () => setTypeUI(input.value));
+  });
+
+  document.querySelector("#create-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const errorElement = document.querySelector("#create-error");
+    errorElement.textContent = "";
+    const type = getSelectedType();
+    const result = await emitWithAck("host:create", {
+      type,
+      prompt: document.querySelector("#prompt").value,
+      theme: getSelectedTheme(),
+      timeLimit: Number(document.querySelector("#time-limit").value),
+      ...(type === "zones" ? { pairs: parseEntries(type) } : { items: parseEntries(type) }),
+    });
+
+    if (result?.error) {
+      errorElement.textContent = result.error;
+      playTone("error");
+      return;
+    }
+    hostToken = result.hostToken;
+    saveTokens();
+    renderHost(result.room);
+    showView("host-view");
+    showToast("Sala creada. Comparte el código o el QR.");
+  });
+
+  document.querySelector("#copy-link").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(document.querySelector("#share-link").textContent);
+      showToast("Enlace copiado");
+    } catch {
+      showToast("No se pudo copiar. Puedes seleccionar y copiar el enlace.");
+    }
+  });
+
+  document.querySelector("#start-activity").addEventListener("click", () => socket.emit("host:start"));
+  document.querySelector("#end-activity").addEventListener("click", () => socket.emit("host:end"));
+  document.querySelector("#reset-activity").addEventListener("click", () => socket.emit("host:reset"));
+  document.querySelector("#close-room").addEventListener("click", () => {
+    socket.emit("host:close");
+    hostToken = "";
+    sessionStorage.removeItem("limlimclap:host-token");
+    showToast("Sala cerrada");
+    showView("home-view");
+  });
+
+  document.querySelector("#projector-toggle").addEventListener("click", (event) => {
+    const on = document.body.classList.toggle("projector");
+    event.currentTarget.setAttribute("aria-pressed", String(on));
+    showToast(on ? "Modo proyector activado" : "Modo proyector desactivado");
+  });
+
+  document.querySelector("#join-code").addEventListener("input", (event) => {
+    event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  });
+
+  document.querySelector("#join-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const errorElement = document.querySelector("#join-error");
+    errorElement.textContent = "";
+
+    const nameInput = document.querySelector("#join-name").value.trim();
+    const payload = {
+      code: document.querySelector("#join-code").value,
+      name: nameInput,
+      token: participantToken,
+    };
+
+    const result = await emitWithAck("participant:join", payload);
+    if (result?.error) {
+      if (payload.token) clearParticipantToken();
+      errorElement.textContent = result.error;
+      playTone("error");
+      return;
+    }
+    participantName = result.name || nameInput;
+    participantToken = result.token;
+    saveTokens();
+    applyParticipantState(result);
+  });
+
+  document.querySelector("#submit-answer").addEventListener("click", async () => {
+    const errorElement = document.querySelector("#game-error");
+    errorElement.textContent = "";
+    const answer = getAnswer();
+    if (!answer) {
+      errorElement.textContent = "Coloca todos los elementos antes de enviar.";
+      playTone("error");
+      return;
+    }
+    const result = await emitWithAck("participant:submit", { answer });
+    if (result?.error) {
+      errorElement.textContent = result.error;
+      playTone("error");
+      return;
+    }
+    showResult(result.score, result.results, { ended: false });
+  });
+
+  document.querySelector("#leave-room").addEventListener("click", () => {
+    clearParticipantToken();
+    showView("home-view");
+  });
+
+  document.querySelector("#sound-toggle").addEventListener("click", () => {
+    soundEnabled = !soundEnabled;
+    localStorage.setItem("limlimclap:sound", soundEnabled ? "1" : "0");
+    updateSoundButton();
+    showToast(soundEnabled ? "Sonido activado" : "Sonido desactivado");
+  });
+
+  socket.on("room:update", (room) => {
+    if (room.code === currentCode && document.querySelector("#host-view").classList.contains("active")) {
+      renderHost(room);
+    }
+  });
+
+  socket.on("room:state", (state) => {
+    if (state.code === currentCode || !currentCode) applyParticipantState(state);
+  });
+
+  socket.on("room:closed", () => {
+    stopTicker();
+    showToast("El anfitrión cerró esta actividad");
+    clearParticipantToken();
+    showView("home-view");
+  });
+
+  socket.on("room:kicked", () => {
+    stopTicker();
+    showToast("El anfitrión te retiró de la sala");
+    clearParticipantToken();
+    showView("join-view");
+  });
+}
+
+async function attemptHostRestore() {
+  if (!hostToken) return false;
+  const code = new URLSearchParams(window.location.search).get("host");
+  if (!code) return false;
+  const result = await emitWithAck("host:rejoin", { code, hostToken });
+  if (result?.error) {
+    hostToken = "";
+    sessionStorage.removeItem("limlimclap:host-token");
+    return false;
+  }
+  renderHost(result.room);
+  showView("host-view");
+  return true;
+}
+
+function initFromUrl() {
+  const inviteCode = new URLSearchParams(window.location.search).get("join");
+  if (inviteCode) {
+    document.querySelector("#join-code").value = inviteCode.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
+    showView("join-view");
+  }
+}
+
+renderTemplates();
+setTypeUI("zones");
+applyTheme("green");
+setupEvents();
+updateSoundButton();
+initFromUrl();
+attemptHostRestore();

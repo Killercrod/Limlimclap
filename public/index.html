@@ -4,7 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f7f7f2">
+    <meta name="description" content="Crea actividades de arrastrar y soltar en directo. Tu grupo se une con un código o un QR, sin cuentas.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Limlimclap — aprende jugando">
+    <meta property="og:description" content="Actividades de arrastrar y soltar en directo. Tu grupo se une con un código o un QR, sin cuentas.">
+    <meta property="og:image" content="/og-image.svg">
+    <meta name="twitter:card" content="summary_large_image">
     <title>Limlimclap — aprende jugando</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -13,18 +20,22 @@
     <script src="/app.js" defer></script>
   </head>
   <body>
+    <a class="skip-link" href="#main">Saltar al contenido</a>
     <header class="topbar">
       <a class="brand" href="/" aria-label="Limlimclap, inicio"><span class="brand-mark">L</span><span>limlimclap</span></a>
-      <span class="topbar-note">Aprender se mueve</span>
+      <div class="topbar-actions">
+        <span class="topbar-note">Aprender se mueve</span>
+        <button class="icon-button" id="sound-toggle" type="button" aria-pressed="false" aria-label="Activar sonido" title="Sonido">🔇</button>
+      </div>
     </header>
 
-    <main>
+    <main id="main">
       <section class="view active" id="home-view">
         <div class="hero">
           <div class="hero-copy">
             <span class="eyebrow"><span class="sparkle">✳</span> PARTICIPA, JUEGA, APRENDE</span>
             <h1>Las ideas también<br>se ponen en <span>movimiento.</span></h1>
-            <p>Crea una actividad y compártela en directo. Tu grupo solo necesita un código para participar desde cualquier dispositivo.</p>
+            <p>Crea una actividad y compártela en directo. Tu grupo solo necesita un código o un QR para participar desde cualquier dispositivo.</p>
             <div class="hero-actions">
               <button class="button button-primary" id="show-create">Crear una actividad <span aria-hidden="true">↗</span></button>
               <button class="button button-secondary" id="show-join">Tengo un código</button>
@@ -42,21 +53,32 @@
         </div>
         <div class="feature-strip">
           <div><span class="feature-icon mint">↔</span><span><strong>Arrastra y suelta</strong><small>Empareja o pon en orden</small></span></div>
-          <div><span class="feature-icon peach">⌁</span><span><strong>Entra en segundos</strong><small>Con un código o enlace</small></span></div>
-          <div><span class="feature-icon lilac">◉</span><span><strong>En directo</strong><small>Ve quién ya respondió</small></span></div>
+          <div><span class="feature-icon peach">⌁</span><span><strong>Entra en segundos</strong><small>Con un código o un QR</small></span></div>
+          <div><span class="feature-icon lilac">◉</span><span><strong>En directo</strong><small>Ranking y resultados al instante</small></span></div>
         </div>
+        <section class="steps" aria-labelledby="steps-title">
+          <h2 id="steps-title">Así de fácil</h2>
+          <ol>
+            <li><span class="step-number">1</span><strong>Crea</strong><small>Escribe tu consigna y los elementos, o parte de un ejemplo.</small></li>
+            <li><span class="step-number">2</span><strong>Comparte</strong><small>Proyecta el código o el QR. Nadie necesita cuenta.</small></li>
+            <li><span class="step-number">3</span><strong>Juega</strong><small>Empieza cuando todos estén dentro y mira los resultados en vivo.</small></li>
+          </ol>
+        </section>
       </section>
 
       <section class="view form-view" id="create-view">
-        <button class="back-link" data-go="home-view">← Volver al inicio</button>
+        <button class="back-link" type="button" data-go="home-view">← Volver al inicio</button>
         <div class="form-heading">
           <span class="eyebrow">TU ACTIVIDAD</span>
           <h1>Vamos a crearla.</h1>
           <p>Diseña una dinámica breve y compártela en vivo con tu grupo.</p>
         </div>
         <form id="create-form" class="panel create-panel">
-          <label class="field-label" for="activity-type">Tipo de actividad</label>
-          <div class="type-options">
+          <span class="field-label">¿Prefieres empezar con un ejemplo?</span>
+          <div class="template-row" id="template-row"></div>
+
+          <span class="field-label" id="type-label">Tipo de actividad</span>
+          <div class="type-options" role="radiogroup" aria-labelledby="type-label">
             <label class="type-option selected" for="type-zones">
               <input id="type-zones" type="radio" name="activity-type" value="zones" checked>
               <span class="type-symbol">▦</span><span><strong>Colocar en zonas</strong><small>Relaciona cada elemento con su zona</small></span><span class="radio-mark"></span>
@@ -71,13 +93,34 @@
           <label class="field-label entries-label" id="entries-label" for="entries">Elementos y respuestas</label>
           <textarea class="text-input entries-input" id="entries" rows="6" required></textarea>
           <p class="field-hint" id="entries-hint">Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.</p>
+
+          <div class="options-row">
+            <div>
+              <label class="field-label" for="time-limit">Tiempo límite</label>
+              <select class="text-input" id="time-limit">
+                <option value="0">Sin límite</option>
+                <option value="30">30 segundos</option>
+                <option value="60">1 minuto</option>
+                <option value="120">2 minutos</option>
+                <option value="300">5 minutos</option>
+                <option value="600">10 minutos</option>
+              </select>
+            </div>
+            <fieldset class="theme-picker">
+              <legend class="field-label">Color</legend>
+              <label class="swatch swatch-green"><input type="radio" name="theme" value="green" checked><span class="visually-hidden">Verde</span></label>
+              <label class="swatch swatch-blue"><input type="radio" name="theme" value="blue"><span class="visually-hidden">Azul</span></label>
+              <label class="swatch swatch-coral"><input type="radio" name="theme" value="coral"><span class="visually-hidden">Coral</span></label>
+              <label class="swatch swatch-violet"><input type="radio" name="theme" value="violet"><span class="visually-hidden">Violeta</span></label>
+            </fieldset>
+          </div>
           <p class="form-error" id="create-error" role="alert"></p>
           <button class="button button-primary button-wide" type="submit">Crear sala en directo <span aria-hidden="true">↗</span></button>
         </form>
       </section>
 
       <section class="view form-view" id="join-view">
-        <button class="back-link" data-go="home-view">← Volver al inicio</button>
+        <button class="back-link" type="button" data-go="home-view">← Volver al inicio</button>
         <div class="form-heading">
           <span class="eyebrow">ÚNETE A UNA ACTIVIDAD</span>
           <h1>¡Tu turno!</h1>
@@ -85,31 +128,59 @@
         </div>
         <form id="join-form" class="panel join-panel">
           <label class="field-label" for="join-code">Código de actividad</label>
-          <input class="text-input code-input" id="join-code" name="code" maxlength="6" placeholder="ABC123" autocomplete="off" required>
+          <input class="text-input code-input" id="join-code" name="code" maxlength="6" placeholder="ABC123" autocomplete="off" autocapitalize="characters" required>
           <label class="field-label" for="join-name">¿Cómo te llamas?</label>
-          <input class="text-input" id="join-name" name="name" maxlength="40" placeholder="Tu nombre" autocomplete="name" required>
+          <input class="text-input" id="join-name" name="name" maxlength="40" placeholder="Tu nombre o apodo" autocomplete="nickname" required>
           <p class="form-error" id="join-error" role="alert"></p>
           <button class="button button-primary button-wide" type="submit">Entrar a la sala <span aria-hidden="true">↗</span></button>
+          <p class="privacy-note">Solo se guarda tu nombre mientras dure la sala. <a href="/privacidad.html">Más información</a></p>
         </form>
       </section>
 
       <section class="view live-view" id="host-view">
         <div class="live-header">
-          <div><span class="eyebrow"><span class="live-dot"></span> SALA EN DIRECTO</span><h1>Tu actividad está lista.</h1><p>Comparte el código o el enlace para que se una tu grupo.</p></div>
-          <button class="button button-secondary" id="close-room">Cerrar sala</button>
+          <div>
+            <span class="eyebrow"><span class="live-dot"></span> <span id="host-status">SALA EN ESPERA</span></span>
+            <h1 id="host-title">Tu actividad está lista.</h1>
+            <p id="host-subtitle">Comparte el código o el QR y empieza cuando todos estén dentro.</p>
+          </div>
+          <div class="host-controls">
+            <span class="timer-pill" id="host-timer" hidden></span>
+            <button class="button button-primary" id="start-activity" type="button">Empezar ↗</button>
+            <button class="button button-primary" id="end-activity" type="button" hidden>Finalizar</button>
+            <button class="button button-secondary" id="reset-activity" type="button" hidden>Reiniciar</button>
+            <button class="button button-secondary" id="projector-toggle" type="button" aria-pressed="false">Modo proyector</button>
+            <button class="button button-secondary" id="close-room" type="button">Cerrar sala</button>
+          </div>
         </div>
         <div class="live-grid">
           <article class="panel share-panel">
             <span class="field-label">CÓDIGO DE ACCESO</span>
             <div class="share-code" id="host-code">------</div>
-            <div class="share-link-row"><span id="share-link"></span><button class="button button-small" id="copy-link">Copiar enlace</button></div>
+            <img class="qr-image" id="host-qr" alt="Código QR para entrar a la sala" width="168" height="168">
+            <div class="share-link-row"><span id="share-link"></span><button class="button button-small" type="button" id="copy-link">Copiar enlace</button></div>
             <div class="host-activity"><span class="eyebrow">CONSIGNA</span><h2 id="host-prompt"></h2></div>
           </article>
-          <article class="panel responses-panel">
-            <div class="response-heading"><div><span class="eyebrow">PARTICIPANTES</span><h2>Respuestas</h2></div><span class="count-pill" id="participant-count">0</span></div>
-            <p class="empty-state" id="empty-responses">Cuando alguien entre, aparecerá aquí.</p>
-            <div class="participant-list" id="participant-list"></div>
-          </article>
+          <div class="live-column">
+            <article class="panel responses-panel">
+              <div class="response-heading"><div><span class="eyebrow">PARTICIPANTES</span><h2>Ranking</h2></div><span class="count-pill" id="participant-count" aria-label="Participantes">0</span></div>
+              <p class="empty-state" id="empty-responses">Cuando alguien entre, aparecerá aquí.</p>
+              <div class="participant-list" id="participant-list"></div>
+            </article>
+            <article class="panel stats-panel" id="stats-panel" hidden>
+              <span class="eyebrow">ACIERTOS POR ELEMENTO</span>
+              <div class="stats-list" id="stats-list"></div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="view live-view participant-view" id="lobby-view">
+        <div class="lobby">
+          <span class="lobby-pulse" aria-hidden="true"></span>
+          <span class="eyebrow">SALA <span id="lobby-code"></span></span>
+          <h1 id="lobby-title">¡Ya estás dentro!</h1>
+          <p>Esperando a que el anfitrión empiece la actividad…</p>
         </div>
       </section>
 
@@ -117,23 +188,29 @@
         <div class="participant-heading">
           <span class="eyebrow"><span class="live-dot"></span> <span id="participant-room-label">ACTIVIDAD EN DIRECTO</span></span>
           <h1 id="participant-prompt"></h1>
-          <p id="participant-instructions"></p>
+          <p>Arrastra las piezas, o tócalas y después toca su destino.</p>
+          <span class="timer-pill" id="participant-timer" hidden></span>
         </div>
         <div id="game-area" class="panel game-panel"></div>
         <p class="form-error game-error" id="game-error" role="alert"></p>
-        <div class="game-footer"><span class="game-feedback" id="game-feedback">Arrastra las piezas o tócalas para colocarlas.</span><button class="button button-primary" id="submit-answer">Enviar respuesta <span aria-hidden="true">↗</span></button></div>
+        <div class="game-footer"><span class="game-feedback" id="game-feedback" aria-live="polite">0 elementos colocados</span><button class="button button-primary" type="button" id="submit-answer">Enviar respuesta <span aria-hidden="true">↗</span></button></div>
       </section>
 
       <section class="view result-view" id="result-view">
-        <div class="result-mark">✓</div>
-        <span class="eyebrow">RESPUESTA ENVIADA</span>
+        <div class="result-mark" id="result-mark">✓</div>
+        <span class="eyebrow" id="result-eyebrow">RESPUESTA ENVIADA</span>
         <h1 id="result-title">¡Muy bien!</h1>
-        <p id="result-message">Tu respuesta ya llegó al anfitrión.</p>
+        <p id="result-message"></p>
         <div class="result-score" id="result-score"></div>
-        <p class="muted">Puedes dejar esta pantalla abierta mientras el grupo termina.</p>
+        <ul class="feedback-list" id="result-feedback"></ul>
+        <div class="final-board" id="final-board" hidden>
+          <span class="eyebrow">TOP 5</span>
+          <ol id="final-board-list"></ol>
+        </div>
+        <button class="button button-secondary" type="button" id="leave-room" hidden>Salir de la sala</button>
       </section>
     </main>
-    <footer class="footer"><span>limlimclap <span class="footer-dot">✳</span></span><span>Hecho para aprender en compañía.</span></footer>
-    <div class="toast" id="toast" role="status"></div>
+    <footer class="footer"><span>limlimclap <span class="footer-dot">✳</span></span><span>Hecho para aprender en compañía. · <a href="/privacidad.html">Privacidad</a></span></footer>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
   </body>
 </html>
