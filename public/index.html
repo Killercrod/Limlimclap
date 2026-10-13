@@ -90,6 +90,20 @@
           </div>
           <label class="field-label" for="prompt">Consigna</label>
           <input class="text-input" id="prompt" name="prompt" maxlength="240" placeholder="Ej. Relaciona cada concepto con su definición" required>
+
+          <div class="image-upload-field">
+            <span class="field-label">Imagen de fondo / diagrama (opcional)</span>
+            <div class="file-uploader-box">
+              <input type="file" id="bg-image-input" accept="image/*" class="visually-hidden">
+              <button type="button" class="button button-secondary button-small" id="btn-select-bg">Seleccionar imagen</button>
+              <span class="file-chosen-name" id="bg-file-name">Ninguna imagen seleccionada</span>
+              <button type="button" class="button-clear-file" id="btn-clear-bg" hidden title="Quitar imagen">✕</button>
+            </div>
+            <div class="image-preview-container" id="bg-preview-wrap" hidden>
+              <img id="bg-preview" alt="Vista previa de fondo">
+            </div>
+          </div>
+
           <label class="field-label entries-label" id="entries-label" for="entries">Elementos y respuestas</label>
           <textarea class="text-input entries-input" id="entries" rows="6" required></textarea>
           <p class="field-hint" id="entries-hint">Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.</p>

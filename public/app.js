@@ -20,6 +20,14 @@ const templates = [
     theme: "blue",
   },
   {
+    name: "Banderas",
+    type: "zones",
+    prompt: "Empareja cada bandera con su país",
+    entries: "Francia [img:https://flagcdn.com/w80/fr.png] → Europa\nJapón [img:https://flagcdn.com/w80/jp.png] → Asia\nPerú [img:https://flagcdn.com/w80/pe.png] → América\nKenia [img:https://flagcdn.com/w80/ke.png] → África",
+    timeLimit: 60,
+    theme: "coral",
+  },
+  {
     name: "Método científico",
     type: "sequence",
     prompt: "Ordena el método científico",
@@ -33,6 +41,7 @@ let currentCode = "";
 let hostToken = sessionStorage.getItem("limlimclap:host-token") || "";
 let participantToken = sessionStorage.getItem("limlimclap:participant-token") || "";
 let currentActivity = null;
+let currentBgImage = "";
 let selectedTile = null;
 let participantName = "";
 let dragTile = null;
@@ -130,11 +139,22 @@ function setTypeUI(type) {
   const isZones = type === "zones";
   document.querySelector("#entries-label").textContent = isZones ? "Elementos y respuestas" : "Elementos en el orden correcto";
   document.querySelector("#entries").placeholder = isZones
-    ? "París → Francia\nTokio → Japón\nLima → Perú"
-    : "Primero\nDespués\nAl final";
+    ? "París → Francia\nTokio [img:https://ejemplo.com/tokio.jpg] → Japón\nLima → Perú"
+    : "Primero\nSegundo [img:https://ejemplo.com/dos.jpg]\nAl final";
   document.querySelector("#entries-hint").innerHTML = isZones
-    ? 'Una relación por línea, con el formato <code>Elemento → Zona</code>. Por ejemplo: <code>París → Francia</code>.'
-    : "Escribe un elemento por línea, en el orden correcto. Se mezclarán para tus participantes.";
+    ? 'Una relación por línea: <code>Elemento → Zona</code>. Puedes añadir imagen con <code>[img:url]</code> (ej. <code>París [img:url] → Francia</code>).'
+    : 'Un elemento por línea en orden. Puedes añadir imagen con <code>[img:url]</code> (ej. <code>Paso 1 [img:url]</code>).';
+}
+
+function parseItem(text) {
+  if (!text) return { label: "", image: "" };
+  const imgMatch = text.match(/\[img:(https?:\/\/[^\]\s]+)\]/i);
+  if (imgMatch) {
+    const image = imgMatch[1].trim();
+    const cleanLabel = text.replace(imgMatch[0], "").trim();
+    return { label: cleanLabel, image };
+  }
+  return { label: text.trim(), image: "" };
 }
 
 function parseEntries(type) {
@@ -147,10 +167,23 @@ function parseEntries(type) {
     return lines.map((line) => {
       const separator = line.includes("→") ? "→" : "->";
       const parts = line.split(separator);
-      return { label: parts[0]?.trim(), target: parts.slice(1).join(separator).trim() };
+      const rawLabel = parts[0]?.trim() || "";
+      const target = parts.slice(1).join(separator).trim();
+      const parsed = parseItem(rawLabel);
+      return {
+        label: parsed.label,
+        target,
+        ...(parsed.image ? { image: parsed.image } : {}),
+      };
     });
   }
-  return lines;
+  return lines.map((line) => {
+    const parsed = parseItem(line);
+    return {
+      text: parsed.label,
+      ...(parsed.image ? { image: parsed.image } : {}),
+    };
+  });
 }
 
 function mountConfetti() {
@@ -341,14 +374,17 @@ function placeTile(tile, target) {
   playTone("ok");
 }
 
-function makeTile(label, index) {
+function makeTile(item, index) {
   const tile = document.createElement("button");
   tile.type = "button";
   tile.className = "tile";
   tile.draggable = true;
+  const label = typeof item === "object" && item !== null ? (item.label || item.text || "") : String(item);
+  const image = typeof item === "object" && item !== null ? (item.image || "") : "";
   tile.dataset.label = label;
   tile.setAttribute("aria-pressed", "false");
-  tile.innerHTML = `<span class="tile-number">${index + 1}</span><span>${escapeHtml(label)}</span>`;
+  const imgHtml = image ? `<img class="tile-img" src="${escapeHtml(image)}" alt="${escapeHtml(label)}">` : "";
+  tile.innerHTML = `<span class="tile-number">${index + 1}</span>${imgHtml}<span>${escapeHtml(label)}</span>`;
 
   tile.addEventListener("click", () => {
     if (selectedTile === tile) {
@@ -394,7 +430,11 @@ function attachDropTarget(target, onDrop) {
 function renderZones() {
   const area = document.querySelector("#game-area");
   area.className = "panel game-panel";
+  const bgBanner = currentActivity.bgImage
+    ? `<div class="game-bg-banner"><img src="${escapeHtml(currentActivity.bgImage)}" alt="Diagrama o fondo de la actividad"></div>`
+    : "";
   area.innerHTML = `
+    ${bgBanner}
     <div class="game-columns">
       <section><h2 class="game-section-title">Elementos</h2><div class="tile-bank" id="tile-bank"></div></section>
       <section><h2 class="game-section-title">Zonas</h2><div class="target-columns" id="target-columns"></div></section>
@@ -422,7 +462,11 @@ function renderZones() {
 function renderSequence() {
   const area = document.querySelector("#game-area");
   area.className = "panel game-panel sequence-game";
+  const bgBanner = currentActivity.bgImage
+    ? `<div class="game-bg-banner"><img src="${escapeHtml(currentActivity.bgImage)}" alt="Diagrama o fondo de la actividad"></div>`
+    : "";
   area.innerHTML = `
+    ${bgBanner}
     <h2 class="game-section-title">Tu secuencia</h2>
     <div id="sequence-slots"></div>
     <h2 class="game-section-title">Elementos disponibles</h2>
@@ -584,6 +628,43 @@ function applyParticipantState(state) {
 }
 
 function setupEvents() {
+  const bgInput = document.querySelector("#bg-image-input");
+  const btnSelectBg = document.querySelector("#btn-select-bg");
+  const btnClearBg = document.querySelector("#btn-clear-bg");
+  const bgFileName = document.querySelector("#bg-file-name");
+  const bgPreviewWrap = document.querySelector("#bg-preview-wrap");
+  const bgPreview = document.querySelector("#bg-preview");
+
+  btnSelectBg.addEventListener("click", () => bgInput.click());
+
+  bgInput.addEventListener("change", () => {
+    const file = bgInput.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      showToast("La imagen debe pesar menos de 2 MB");
+      bgInput.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      currentBgImage = e.target.result;
+      bgFileName.textContent = file.name;
+      bgPreview.src = currentBgImage;
+      bgPreviewWrap.hidden = false;
+      btnClearBg.hidden = false;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  btnClearBg.addEventListener("click", () => {
+    currentBgImage = "";
+    bgInput.value = "";
+    bgFileName.textContent = "Ninguna imagen seleccionada";
+    bgPreviewWrap.hidden = true;
+    btnClearBg.hidden = true;
+    bgPreview.src = "";
+  });
+
   document.querySelector("#show-create").addEventListener("click", () => showView("create-view"));
   document.querySelector("#show-join").addEventListener("click", () => showView("join-view"));
   document.querySelectorAll("[data-go]").forEach((button) => {
@@ -604,6 +685,7 @@ function setupEvents() {
       prompt: document.querySelector("#prompt").value,
       theme: getSelectedTheme(),
       timeLimit: Number(document.querySelector("#time-limit").value),
+      ...(currentBgImage ? { bgImage: currentBgImage } : {}),
       ...(type === "zones" ? { pairs: parseEntries(type) } : { items: parseEntries(type) }),
     });
 

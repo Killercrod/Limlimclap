@@ -60,3 +60,35 @@ test("scores a sequence only when it contains every activity item once", () => {
   assert.equal(answerScore(activity, ["Primero", "Primero", "Al final"]), null);
   assert.equal(answerScore(activity, ["Primero", "Después"]), null);
 });
+
+test("validates and scores activities with item images and background images", () => {
+  const result = validateActivity({
+    type: "zones",
+    prompt: "Empareja banderas",
+    bgImage: "https://ejemplo.com/mapa.png",
+    pairs: [
+      { label: "Francia", target: "Europa", image: "https://ejemplo.com/fr.png" },
+      { label: "Japón", target: "Asia", image: "https://ejemplo.com/jp.png" },
+    ],
+  });
+
+  assert.equal(result.activity.bgImage, "https://ejemplo.com/mapa.png");
+  assert.equal(result.activity.pairs[0].image, "https://ejemplo.com/fr.png");
+
+  const score = answerScore(result.activity, { Francia: "Europa", Japón: "Asia" });
+  assert.equal(score.correct, 2);
+
+  const seqResult = validateActivity({
+    type: "sequence",
+    prompt: "Ordena pasos con imagen",
+    items: [
+      { text: "Paso 1", image: "https://ejemplo.com/1.png" },
+      { text: "Paso 2", image: "https://ejemplo.com/2.png" },
+    ],
+  });
+  assert.equal(seqResult.activity.items[0].text, "Paso 1");
+  assert.equal(seqResult.activity.items[0].image, "https://ejemplo.com/1.png");
+
+  const seqScore = answerScore(seqResult.activity, ["Paso 1", "Paso 2"]);
+  assert.equal(seqScore.correct, 2);
+});

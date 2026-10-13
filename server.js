@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 1e5 });
+const io = new Server(server, { maxHttpBufferSize: 2e6 });
 const rooms = new Map();
 const createLog = new Map();
 
@@ -50,6 +50,14 @@ function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 }
 
+function cleanImage(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (trimmed.startsWith("data:image/") && trimmed.length <= 1.5e6) return trimmed;
+  if (/^https?:\/\//i.test(trimmed) && trimmed.length <= 500) return trimmed;
+  return "";
+}
+
 function validateActivity(input) {
   const type = input?.type;
   const prompt = cleanText(input?.prompt, 240);
@@ -60,16 +68,23 @@ function validateActivity(input) {
     return { error: "El tiempo límite debe estar entre 10 segundos y 60 minutos." };
   }
   const theme = THEMES.includes(input?.theme) ? input.theme : "green";
-  const base = { type, prompt, timeLimit, theme };
+  const bgImage = cleanImage(input?.bgImage);
+  const base = { type, prompt, timeLimit, theme, ...(bgImage ? { bgImage } : {}) };
 
   if (type === "zones") {
     if (!Array.isArray(input.pairs) || input.pairs.length < 2 || input.pairs.length > 20) {
       return { error: "Añade entre 2 y 20 elementos con su zona correcta." };
     }
-    const pairs = input.pairs.map((pair) => ({
-      label: cleanText(pair?.label, 80),
-      target: cleanText(pair?.target, 80),
-    }));
+    const pairs = input.pairs.map((pair) => {
+      const label = cleanText(pair?.label, 80);
+      const target = cleanText(pair?.target, 80);
+      const image = cleanImage(pair?.image);
+      return {
+        label,
+        target,
+        ...(image ? { image } : {}),
+      };
+    });
     if (pairs.some((pair) => !pair.label || !pair.target)) {
       return { error: "Cada elemento y cada zona deben tener un nombre." };
     }
@@ -83,9 +98,16 @@ function validateActivity(input) {
     if (!Array.isArray(input.items) || input.items.length < 2 || input.items.length > 20) {
       return { error: "Añade entre 2 y 20 elementos para ordenar." };
     }
-    const items = input.items.map((item) => cleanText(item, 80));
-    if (items.some((item) => !item)) return { error: "No dejes elementos vacíos." };
-    if (new Set(items.map((item) => item.toLowerCase())).size !== items.length) {
+    const items = input.items.map((item) => {
+      if (typeof item === "object" && item !== null) {
+        const text = cleanText(item.text || item.label, 80);
+        const image = cleanImage(item.image);
+        return { text, ...(image ? { image } : {}) };
+      }
+      return { text: cleanText(item, 80) };
+    });
+    if (items.some((item) => !item.text)) return { error: "No dejes elementos vacíos." };
+    if (new Set(items.map((item) => item.text.toLowerCase())).size !== items.length) {
       return { error: "Los nombres de los elementos deben ser únicos." };
     }
     return { activity: { ...base, items } };
@@ -114,16 +136,21 @@ function shuffled(items) {
 }
 
 function publicActivity(activity) {
-  const base = { type: activity.type, prompt: activity.prompt, theme: activity.theme };
+  const base = {
+    type: activity.type,
+    prompt: activity.prompt,
+    theme: activity.theme,
+    ...(activity.bgImage ? { bgImage: activity.bgImage } : {}),
+  };
   if (activity.type === "zones") {
     return {
       ...base,
-      labels: shuffled(activity.pairs.map((pair) => pair.label)),
+      labels: shuffled(activity.pairs.map((pair) => ({ label: pair.label, image: pair.image }))),
       targets: shuffled([...new Set(activity.pairs.map((pair) => pair.target))]),
     };
   }
   let items = shuffled(activity.items);
-  while (items.length > 1 && items.every((item, index) => item === activity.items[index])) {
+  while (items.length > 1 && items.every((item, index) => (item.text || item) === (activity.items[index].text || activity.items[index]))) {
     items = shuffled(activity.items);
   }
   return { ...base, items };
@@ -148,16 +175,17 @@ function answerScore(activity, answer) {
     return { correct: results.filter((result) => result.ok).length, total: results.length, results };
   }
 
+  const itemTexts = activity.items.map((it) => it.text || it);
   if (
     !Array.isArray(answer) ||
-    answer.length !== activity.items.length ||
+    answer.length !== itemTexts.length ||
     answer.some((item) => typeof item !== "string") ||
-    new Set(answer).size !== activity.items.length ||
-    answer.some((item) => !activity.items.includes(item))
+    new Set(answer).size !== itemTexts.length ||
+    answer.some((item) => !itemTexts.includes(item))
   ) {
     return null;
   }
-  const results = activity.items.map((expected, index) => ({
+  const results = itemTexts.map((expected, index) => ({
     name: `Posición ${index + 1}`,
     chosen: answer[index],
     expected,
@@ -180,12 +208,13 @@ function roomSummary(room) {
   const answered = ranking(room);
   const names = room.activity.type === "zones"
     ? room.activity.pairs.map((pair) => pair.label)
-    : room.activity.items.map((item, index) => `${index + 1}. ${item}`);
+    : room.activity.items.map((item, index) => `${index + 1}. ${item.text || item}`);
   return {
     code: room.code,
     prompt: room.activity.prompt,
     type: room.activity.type,
     theme: room.activity.theme,
+    ...(room.activity.bgImage ? { bgImage: room.activity.bgImage } : {}),
     status: room.status,
     timeLimit: room.activity.timeLimit,
     remainingMs: remainingMs(room),
