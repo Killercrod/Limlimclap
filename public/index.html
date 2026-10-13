@@ -25,6 +25,7 @@
       <a class="brand" href="/" aria-label="Limlimclap, inicio"><span class="brand-mark">L</span><span>limlimclap</span></a>
       <div class="topbar-actions">
         <span class="topbar-note">Aprender se mueve</span>
+        <button class="icon-button" id="theme-toggle" type="button" aria-pressed="false" aria-label="Cambiar a modo oscuro" title="Modo oscuro">🌙</button>
         <button class="icon-button" id="sound-toggle" type="button" aria-pressed="false" aria-label="Activar sonido" title="Sonido">🔇</button>
       </div>
     </header>
@@ -74,8 +75,24 @@
           <p>Diseña una dinámica breve y compártela en vivo con tu grupo.</p>
         </div>
         <form id="create-form" class="panel create-panel">
+          <div class="questions-header">
+            <span class="field-label">Preguntas del cuestionario</span>
+            <div class="questions-tabs" id="questions-tabs"></div>
+          </div>
+
           <span class="field-label">¿Prefieres empezar con un ejemplo?</span>
           <div class="template-row" id="template-row"></div>
+
+          <div class="template-tools">
+            <button type="button" class="button button-small button-secondary" id="btn-save-template">💾 Guardar como mi plantilla</button>
+            <button type="button" class="button button-small button-secondary" id="btn-export-json">⤓ Exportar JSON</button>
+            <label class="button button-small button-secondary file-button" for="import-json-input">⤒ Importar JSON</label>
+            <input type="file" id="import-json-input" accept=".json,application/json" class="visually-hidden">
+          </div>
+          <div class="my-templates-row" id="my-templates-row" hidden>
+            <span class="field-label">Mis plantillas guardadas</span>
+            <div class="template-chips" id="my-templates-chips"></div>
+          </div>
 
           <span class="field-label" id="type-label">Tipo de actividad</span>
           <div class="type-options" role="radiogroup" aria-labelledby="type-label">
@@ -161,7 +178,9 @@
           <div class="host-controls">
             <span class="timer-pill" id="host-timer" hidden></span>
             <button class="button button-primary" id="start-activity" type="button">Empezar ↗</button>
+            <button class="button button-primary" id="next-activity" type="button" hidden>Siguiente pregunta ↗</button>
             <button class="button button-primary" id="end-activity" type="button" hidden>Finalizar</button>
+            <button class="button button-secondary" id="export-csv" type="button" hidden>Exportar a Excel (CSV)</button>
             <button class="button button-secondary" id="reset-activity" type="button" hidden>Reiniciar</button>
             <button class="button button-secondary" id="projector-toggle" type="button" aria-pressed="false">Modo proyector</button>
             <button class="button button-secondary" id="close-room" type="button">Cerrar sala</button>
@@ -176,6 +195,10 @@
             <div class="host-activity"><span class="eyebrow">CONSIGNA</span><h2 id="host-prompt"></h2></div>
           </article>
           <div class="live-column">
+            <div class="podium-container" id="host-podium-wrap" hidden>
+              <span class="eyebrow">🏆 PODIO DE GANADORES</span>
+              <div class="podium" id="host-podium"></div>
+            </div>
             <article class="panel responses-panel">
               <div class="response-heading"><div><span class="eyebrow">PARTICIPANTES</span><h2>Ranking</h2></div><span class="count-pill" id="participant-count" aria-label="Participantes">0</span></div>
               <p class="empty-state" id="empty-responses">Cuando alguien entre, aparecerá aquí.</p>
@@ -195,6 +218,15 @@
           <span class="eyebrow">SALA <span id="lobby-code"></span></span>
           <h1 id="lobby-title">¡Ya estás dentro!</h1>
           <p>Esperando a que el anfitrión empiece la actividad…</p>
+          <div class="reaction-bar">
+            <span class="reaction-label">Reacciona:</span>
+            <button type="button" class="reaction-btn" data-emoji="👏" title="Aplausos">👏</button>
+            <button type="button" class="reaction-btn" data-emoji="🔥" title="Fuego">🔥</button>
+            <button type="button" class="reaction-btn" data-emoji="❤️" title="Amor">❤️</button>
+            <button type="button" class="reaction-btn" data-emoji="💡" title="Idea">💡</button>
+            <button type="button" class="reaction-btn" data-emoji="🤯" title="Sorpresa">🤯</button>
+            <button type="button" class="reaction-btn" data-emoji="🎉" title="Fiesta">🎉</button>
+          </div>
         </div>
       </section>
 
@@ -207,7 +239,19 @@
         </div>
         <div id="game-area" class="panel game-panel"></div>
         <p class="form-error game-error" id="game-error" role="alert"></p>
-        <div class="game-footer"><span class="game-feedback" id="game-feedback" aria-live="polite">0 elementos colocados</span><button class="button button-primary" type="button" id="submit-answer">Enviar respuesta <span aria-hidden="true">↗</span></button></div>
+        <div class="game-footer">
+          <span class="game-feedback" id="game-feedback" aria-live="polite">0 elementos colocados</span>
+          <button class="button button-primary" type="button" id="submit-answer">Enviar respuesta <span aria-hidden="true">↗</span></button>
+        </div>
+        <div class="reaction-bar">
+          <span class="reaction-label">Reacciona:</span>
+          <button type="button" class="reaction-btn" data-emoji="👏" title="Aplausos">👏</button>
+          <button type="button" class="reaction-btn" data-emoji="🔥" title="Fuego">🔥</button>
+          <button type="button" class="reaction-btn" data-emoji="❤️" title="Amor">❤️</button>
+          <button type="button" class="reaction-btn" data-emoji="💡" title="Idea">💡</button>
+          <button type="button" class="reaction-btn" data-emoji="🤯" title="Sorpresa">🤯</button>
+          <button type="button" class="reaction-btn" data-emoji="🎉" title="Fiesta">🎉</button>
+        </div>
       </section>
 
       <section class="view result-view" id="result-view">
@@ -217,12 +261,26 @@
         <p id="result-message"></p>
         <div class="result-score" id="result-score"></div>
         <ul class="feedback-list" id="result-feedback"></ul>
+        <div class="podium-container" id="result-podium-wrap" hidden>
+          <span class="eyebrow">🏆 PODIO DE GANADORES</span>
+          <div class="podium" id="result-podium"></div>
+        </div>
         <div class="final-board" id="final-board" hidden>
           <span class="eyebrow">TOP 5</span>
           <ol id="final-board-list"></ol>
         </div>
+        <div class="reaction-bar">
+          <span class="reaction-label">Reacciona:</span>
+          <button type="button" class="reaction-btn" data-emoji="👏" title="Aplausos">👏</button>
+          <button type="button" class="reaction-btn" data-emoji="🔥" title="Fuego">🔥</button>
+          <button type="button" class="reaction-btn" data-emoji="❤️" title="Amor">❤️</button>
+          <button type="button" class="reaction-btn" data-emoji="💡" title="Idea">💡</button>
+          <button type="button" class="reaction-btn" data-emoji="🤯" title="Sorpresa">🤯</button>
+          <button type="button" class="reaction-btn" data-emoji="🎉" title="Fiesta">🎉</button>
+        </div>
         <button class="button button-secondary" type="button" id="leave-room" hidden>Salir de la sala</button>
       </section>
+      <div class="reactions-overlay" id="reactions-overlay" aria-hidden="true"></div>
     </main>
     <footer class="footer"><span>limlimclap <span class="footer-dot">✳</span></span><span>Hecho para aprender en compañía. · <a href="/privacidad.html">Privacidad</a></span></footer>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>

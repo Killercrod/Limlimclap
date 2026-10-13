@@ -28,7 +28,7 @@ app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
-      "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ws: wss:; " +
+      "font-src https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' ws: wss:; " +
       "frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
   );
   next();
@@ -116,6 +116,24 @@ function validateActivity(input) {
   return { error: "Elige un tipo de actividad válido." };
 }
 
+function validateActivities(input) {
+  if (Array.isArray(input?.activities) && input.activities.length > 0) {
+    if (input.activities.length > 15) {
+      return { error: "Máximo 15 actividades por sala." };
+    }
+    const validated = [];
+    for (let index = 0; index < input.activities.length; index += 1) {
+      const res = validateActivity(input.activities[index]);
+      if (res.error) return { error: `Actividad ${index + 1}: ${res.error}` };
+      validated.push(res.activity);
+    }
+    return { activities: validated };
+  }
+  const single = validateActivity(input);
+  if (single.error) return single;
+  return { activities: [single.activity] };
+}
+
 function makeRoomCode() {
   let code;
   do {
@@ -188,20 +206,63 @@ function answerScore(activity, answer) {
   const results = itemTexts.map((expected, index) => ({
     name: `Posición ${index + 1}`,
     chosen: answer[index],
-    expected,
     ok: answer[index] === expected,
   }));
   return { correct: results.filter((result) => result.ok).length, total: results.length, results };
+}
+
+function calculateScoreWithBonus(score, { startedAt, submittedAt, timeLimit } = {}) {
+  const elapsedMs = Math.max(0, (submittedAt || Date.now()) - (startedAt || submittedAt || Date.now()));
+  const basePoints = score.correct * 1000;
+  let speedBonus = 0;
+  if (score.correct > 0) {
+    if (timeLimit && timeLimit > 0) {
+      const totalMs = timeLimit * 1000;
+      const remaining = Math.max(0, totalMs - elapsedMs);
+      speedBonus = Math.round((remaining / totalMs) * 500 * (score.correct / score.total));
+    } else {
+      const remaining = Math.max(0, 60000 - elapsedMs);
+      speedBonus = Math.round((remaining / 60000) * 500 * (score.correct / score.total));
+    }
+  }
+  const points = basePoints + speedBonus;
+  return {
+    ...score,
+    basePoints,
+    speedBonus,
+    points,
+    timeSeconds: Math.round(elapsedMs / 100) / 10,
+  };
 }
 
 function remainingMs(room) {
   return room.endsAt ? Math.max(0, room.endsAt - Date.now()) : null;
 }
 
+function participantPoints(participant) {
+  if (typeof participant.totalPoints === "number" && participant.totalPoints > 0) {
+    return participant.totalPoints;
+  }
+  return participant.score?.points || 0;
+}
+
+function participantCorrect(participant) {
+  if (typeof participant.totalCorrect === "number" && participant.totalCorrect > 0) {
+    return participant.totalCorrect;
+  }
+  return participant.score?.correct || 0;
+}
+
 function ranking(room) {
   return [...room.participants.values()]
-    .filter((participant) => participant.score)
-    .sort((a, b) => b.score.correct - a.score.correct || a.submittedAt - b.submittedAt);
+    .filter((participant) => participant.score || (participant.totalPoints && participant.totalPoints > 0))
+    .sort((a, b) => {
+      const diffPoints = participantPoints(b) - participantPoints(a);
+      if (diffPoints !== 0) return diffPoints;
+      const diffCorrect = participantCorrect(b) - participantCorrect(a);
+      if (diffCorrect !== 0) return diffCorrect;
+      return (a.submittedAt || 0) - (b.submittedAt || 0);
+    });
 }
 
 function roomSummary(room) {
@@ -216,6 +277,9 @@ function roomSummary(room) {
     theme: room.activity.theme,
     ...(room.activity.bgImage ? { bgImage: room.activity.bgImage } : {}),
     status: room.status,
+    activityIndex: room.activityIndex || 0,
+    totalActivities: room.activities ? room.activities.length : 1,
+    isLastActivity: !room.activities || room.activityIndex >= room.activities.length - 1,
     timeLimit: room.activity.timeLimit,
     remainingMs: remainingMs(room),
     participants: [...room.participants.values()].map((participant) => ({
@@ -223,12 +287,21 @@ function roomSummary(room) {
       name: participant.name,
       connected: participant.connected,
       submitted: Boolean(participant.score),
-      score: participant.score && { correct: participant.score.correct, total: participant.score.total },
+      score: participant.score && {
+        correct: participant.score.correct,
+        total: participant.score.total,
+        points: participant.score.points,
+        speedBonus: participant.score.speedBonus,
+        timeSeconds: participant.score.timeSeconds,
+      },
+      totalPoints: participant.totalPoints || participant.score?.points || 0,
+      totalCorrect: participant.totalCorrect || participant.score?.correct || 0,
+      totalPossible: participant.totalPossible || participant.score?.total || 0,
     })),
     stats: names.map((name, index) => ({
       name,
-      correct: answered.filter((participant) => participant.score.results[index].ok).length,
-      answered: answered.length,
+      correct: answered.filter((participant) => participant.score?.results?.[index]?.ok).length,
+      answered: answered.filter((participant) => participant.score).length,
     })),
   };
 }
@@ -240,9 +313,21 @@ function participantState(room, participant) {
     status: room.status,
     remainingMs: remainingMs(room),
     name: participant.name,
+    activityIndex: room.activityIndex || 0,
+    totalActivities: room.activities ? room.activities.length : 1,
+    isLastActivity: !room.activities || room.activityIndex >= room.activities.length - 1,
+    totalPoints: participant.totalPoints || participant.score?.points || 0,
+    totalCorrect: participant.totalCorrect || participant.score?.correct || 0,
+    totalPossible: participant.totalPossible || participant.score?.total || 0,
   };
   if (participant.score) {
-    state.score = { correct: participant.score.correct, total: participant.score.total };
+    state.score = {
+      correct: participant.score.correct,
+      total: participant.score.total,
+      points: participant.score.points,
+      speedBonus: participant.score.speedBonus,
+      timeSeconds: participant.score.timeSeconds,
+    };
     state.results = participant.score.results;
   }
   if (room.status === "live" && !participant.score) state.activity = publicActivity(room.activity);
@@ -250,10 +335,11 @@ function participantState(room, participant) {
     const ranked = ranking(room);
     state.leaderboard = ranked.slice(0, 5).map((entry) => ({
       name: entry.name,
-      correct: entry.score.correct,
-      total: entry.score.total,
+      correct: entry.totalCorrect || entry.score?.correct || 0,
+      total: entry.totalPossible || entry.score?.total || 0,
+      points: entry.totalPoints || entry.score?.points || 0,
     }));
-    state.rank = participant.score ? ranked.indexOf(participant) + 1 : null;
+    state.rank = (participant.score || participant.totalPoints > 0) ? ranked.indexOf(participant) + 1 : null;
     state.answered = ranked.length;
   }
   return state;
@@ -315,7 +401,7 @@ function hostRoom(socket) {
 
 io.on("connection", (socket) => {
   socket.on("host:create", (input, acknowledge) => {
-    const result = validateActivity(input);
+    const result = validateActivities(input);
     if (result.error) return acknowledge?.({ error: result.error });
     if (rooms.size >= MAX_ROOMS || !allowCreate(clientIp(socket))) {
       return acknowledge?.({ error: "Se alcanzó el límite de salas. Inténtalo de nuevo más tarde." });
@@ -326,10 +412,13 @@ io.on("connection", (socket) => {
       code: makeRoomCode(),
       hostToken: crypto.randomUUID(),
       hostSocketId: socket.id,
-      activity: result.activity,
+      activities: result.activities,
+      activityIndex: 0,
+      activity: result.activities[0],
       participants: new Map(),
       kicked: new Set(),
       status: "lobby",
+      startedAt: null,
       endsAt: null,
       timer: null,
       hostGrace: null,
@@ -357,10 +446,35 @@ io.on("connection", (socket) => {
     const room = hostRoom(socket);
     if (!room || room.status !== "lobby") return;
     room.status = "live";
+    room.startedAt = Date.now();
     if (room.activity.timeLimit) {
       room.endsAt = Date.now() + room.activity.timeLimit * 1000;
       room.timer = setTimeout(() => endRoom(room), room.activity.timeLimit * 1000);
       room.timer.unref();
+    }
+    pushState(room);
+  });
+
+  socket.on("host:nextActivity", () => {
+    const room = hostRoom(socket);
+    if (!room || !room.activities) return;
+    if (room.activityIndex + 1 >= room.activities.length) return;
+
+    clearTimers(room);
+    room.activityIndex += 1;
+    room.activity = room.activities[room.activityIndex];
+    room.status = "live";
+    room.startedAt = Date.now();
+    if (room.activity.timeLimit) {
+      room.endsAt = Date.now() + room.activity.timeLimit * 1000;
+      room.timer = setTimeout(() => endRoom(room), room.activity.timeLimit * 1000);
+      room.timer.unref();
+    } else {
+      room.endsAt = null;
+    }
+    for (const participant of room.participants.values()) {
+      participant.score = null;
+      participant.submittedAt = null;
     }
     pushState(room);
   });
@@ -376,10 +490,17 @@ io.on("connection", (socket) => {
     clearTimeout(room.timer);
     room.timer = null;
     room.endsAt = null;
+    room.startedAt = null;
+    room.activityIndex = 0;
+    room.activity = room.activities ? room.activities[0] : room.activity;
     room.status = "lobby";
     for (const participant of room.participants.values()) {
       participant.score = null;
       participant.submittedAt = null;
+      participant.scoresByActivity = [];
+      participant.totalPoints = 0;
+      participant.totalCorrect = 0;
+      participant.totalPossible = 0;
     }
     pushState(room);
   });
@@ -401,6 +522,18 @@ io.on("connection", (socket) => {
   socket.on("host:close", () => {
     const room = hostRoom(socket);
     if (room) closeRoom(room.code);
+  });
+
+  socket.on("room:react", (input) => {
+    const code = socket.data.code || socket.data.hostCode;
+    const room = rooms.get(code);
+    if (!room) return;
+    const emoji = cleanText(input?.emoji, 8);
+    if (!emoji) return;
+    const now = Date.now();
+    if (socket.data.lastReaction && now - socket.data.lastReaction < 200) return;
+    socket.data.lastReaction = now;
+    io.to(room.code).emit("room:reaction", { emoji, id: crypto.randomUUID() });
   });
 
   socket.on("participant:join", (input, acknowledge) => {
@@ -425,6 +558,10 @@ io.on("connection", (socket) => {
         connected: true,
         score: null,
         submittedAt: null,
+        scoresByActivity: [],
+        totalPoints: 0,
+        totalCorrect: 0,
+        totalPossible: 0,
       };
       room.participants.set(participant.token, participant);
     }
@@ -443,12 +580,35 @@ io.on("connection", (socket) => {
     }
     if (room.status !== "live") return acknowledge?.({ error: "La actividad no está recibiendo respuestas." });
     if (participant.score) return acknowledge?.({ error: "Ya enviaste tu respuesta." });
-    const score = answerScore(room.activity, input?.answer);
-    if (!score) return acknowledge?.({ error: "Completa todos los elementos antes de enviar." });
+    const baseScore = answerScore(room.activity, input?.answer);
+    if (!baseScore) return acknowledge?.({ error: "Completa todos los elementos antes de enviar." });
+
+    const score = calculateScoreWithBonus(baseScore, {
+      startedAt: room.startedAt,
+      submittedAt: Date.now(),
+      timeLimit: room.activity.timeLimit,
+    });
 
     participant.score = score;
     participant.submittedAt = Date.now();
-    acknowledge?.({ score: { correct: score.correct, total: score.total }, results: score.results });
+    if (!participant.scoresByActivity) participant.scoresByActivity = [];
+    participant.scoresByActivity[room.activityIndex || 0] = score;
+
+    participant.totalPoints = participant.scoresByActivity.reduce((sum, s) => sum + (s?.points || 0), 0);
+    participant.totalCorrect = participant.scoresByActivity.reduce((sum, s) => sum + (s?.correct || 0), 0);
+    participant.totalPossible = participant.scoresByActivity.reduce((sum, s) => sum + (s?.total || 0), 0);
+
+    acknowledge?.({
+      score: {
+        correct: score.correct,
+        total: score.total,
+        points: score.points,
+        speedBonus: score.speedBonus,
+        timeSeconds: score.timeSeconds,
+      },
+      totalPoints: participant.totalPoints,
+      results: score.results,
+    });
     notifyHost(room);
   });
 
@@ -481,4 +641,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { answerScore, validateActivity, server, io, rooms };
+module.exports = { answerScore, validateActivity, validateActivities, calculateScoreWithBonus, server, io, rooms };

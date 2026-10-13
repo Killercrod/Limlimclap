@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { answerScore, validateActivity } = require("../server");
+const { answerScore, validateActivity, validateActivities, calculateScoreWithBonus } = require("../server");
 
 test("validates and normalizes a zone-matching activity", () => {
   const result = validateActivity({
@@ -91,4 +91,45 @@ test("validates and scores activities with item images and background images", (
 
   const seqScore = answerScore(seqResult.activity, ["Paso 1", "Paso 2"]);
   assert.equal(seqScore.correct, 2);
+});
+
+test("validates a batch of multiple activities", () => {
+  const result = validateActivities({
+    activities: [
+      { type: "sequence", prompt: "P1", items: ["A", "B"] },
+      { type: "zones", prompt: "P2", pairs: [{ label: "X", target: "Y" }, { label: "W", target: "Z" }] },
+    ],
+  });
+  assert.equal(result.activities.length, 2);
+  assert.equal(result.activities[0].prompt, "P1");
+  assert.equal(result.activities[1].prompt, "P2");
+
+  const invalid = validateActivities({
+    activities: [
+      { type: "sequence", prompt: "P1", items: ["A", "B"] },
+      { type: "sequence", prompt: "", items: ["A", "B"] },
+    ],
+  });
+  assert.match(invalid.error, /Actividad 2/);
+});
+
+test("calculates score with speed bonus based on elapsed time", () => {
+  const base = { correct: 2, total: 2, results: [] };
+  const quick = calculateScoreWithBonus(base, {
+    startedAt: 1000,
+    submittedAt: 2000, // 1 second elapsed
+    timeLimit: 60,
+  });
+  assert.equal(quick.correct, 2);
+  assert.equal(quick.basePoints, 2000);
+  assert.equal(quick.speedBonus > 400, true);
+  assert.equal(quick.points > 2400, true);
+
+  const zeroCorrect = calculateScoreWithBonus({ correct: 0, total: 2, results: [] }, {
+    startedAt: 1000,
+    submittedAt: 2000,
+    timeLimit: 60,
+  });
+  assert.equal(zeroCorrect.speedBonus, 0);
+  assert.equal(zeroCorrect.points, 0);
 });
