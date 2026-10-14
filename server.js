@@ -61,8 +61,7 @@ async function serveIndex(request, response, next) {
       .replace('href="/styles.css"', 'href="' + BASE_PATH + '/styles.css?v=' + fs.statSync(path.join(PUBLIC_DIR, 'styles.css')).mtimeMs + '"')
       .replace('src="/socket.io/socket.io.js"', 'src="' + BASE_PATH + '/socket.io/socket.io.js"')
       .replace('src="/app.js"', 'src="' + BASE_PATH + '/app.js?v=' + fs.statSync(path.join(PUBLIC_DIR, 'app.js')).mtimeMs + '"')
-      .replace('href="/"', 'href="' + (BASE_PATH || "/") + '"')
-      .replace("<body>", "<body>\n    <script>window.__LIMLIM_BASE__=" + JSON.stringify(BASE_PATH) + ";</script>");
+      .replace('href="/"', 'href="' + (BASE_PATH || "/") + '"');
     response.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
     response.type("html").send(html);
   } catch (error) {
