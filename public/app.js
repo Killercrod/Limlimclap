@@ -63,7 +63,7 @@ document.querySelectorAll("[data-go]").forEach((button) => {
   button.addEventListener("click", () => showView(button.dataset.go));
 });
 
-document.querySelectorAll('input[name="activity-type"]').forEach((input) => {
+document.querySelectorAll('input[name="round-type"]').forEach((input) => {
   input.addEventListener("change", () => {
     document.querySelectorAll(".type-option").forEach((option) => option.classList.remove("selected"));
     input.closest(".type-option").classList.add("selected");

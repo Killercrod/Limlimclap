@@ -170,6 +170,10 @@ function renderEditor() {
   document.querySelectorAll('input[name="round-type"]').forEach((input) => {
     input.checked = input.value === round.type;
   });
+  document.querySelectorAll(".type-option").forEach((option) => {
+    const input = option.querySelector('input[name="round-type"]');
+    option.classList.toggle("selected", Boolean(input && input.checked));
+  });
 }
 
 function addRound() {
