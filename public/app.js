@@ -1,4 +1,4 @@
-const BASE_PATH = (window.__LIMLIM_BASE__ || "").replace(/\/$/, "");
+const BASE_PATH = (window.__LIMLIM_BASE__ || location.pathname.replace(/\/+$/, "").replace(/\/[^/]*$/, "") || "").replace(/\/$/, "");
 const socket = io({ path: `${BASE_PATH}/socket.io/` });
 const views = [...document.querySelectorAll(".view")];
 const toast = document.querySelector("#toast");
