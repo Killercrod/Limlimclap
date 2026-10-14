@@ -62,6 +62,7 @@ async function serveIndex(request, response, next) {
       .replace('src="/app.js"', 'src="' + BASE_PATH + '/app.js?v=' + fs.statSync(path.join(PUBLIC_DIR, 'app.js')).mtimeMs + '"')
       .replace('href="/"', 'href="' + (BASE_PATH || "/") + '"')
       .replace("<body>", "<body>\n    <script>window.__LIMLIM_BASE__=" + JSON.stringify(BASE_PATH) + ";</script>");
+    response.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
     response.type("html").send(html);
   } catch (error) {
     next(error);
