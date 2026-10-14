@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { maxHttpBufferSize: 2e6 });
+const io = new Server(server, { maxHttpBufferSize: 8e6 });
 const rooms = new Map();
 const createLog = new Map();
 
@@ -39,7 +39,9 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 app.get(/^\/qr\/([A-Z0-9]{6})\.svg$/, async (req, res) => {
   const code = req.params[0];
   if (!rooms.has(code)) return res.status(404).end();
-  const link = `${req.protocol}://${req.get("host")}/?join=${code}`;
+  const protocol = req.get("x-forwarded-proto") || req.protocol;
+  const basePath = (process.env.BASE_PATH || "").replace(/\/+$/, "");
+  const link = `${protocol}://${req.get("host")}${basePath}/?join=${code}`;
   const svg = await QRCode.toString(link, { type: "svg", margin: 1 });
   res.type("image/svg+xml").set("Cache-Control", "no-store").send(svg);
 });
@@ -636,8 +638,9 @@ if (require.main === module) {
       if (times.every((time) => now - time > 60 * 60 * 1000)) createLog.delete(ip);
     }
   }, 10 * 60 * 1000).unref();
-  server.listen(PORT, () => {
-    console.log(`Limlimclap disponible en http://localhost:${PORT}`);
+  const HOST = process.env.HOST || "127.0.0.1";
+  server.listen(PORT, HOST, () => {
+    console.log(`Limlimclap disponible en http://${HOST}:${PORT}`);
   });
 }
 
