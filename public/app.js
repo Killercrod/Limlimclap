@@ -66,9 +66,19 @@ function showToast(message) {
 
 function emitWithAck(event, payload) {
   return new Promise((resolve) => {
-    socket.timeout(30000).emit(event, payload, (error, response) => {
-      if (error) resolve({ error: "No pudimos conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo." });
-      else resolve(response);
+    let done = false;
+    const timer = window.setTimeout(() => {
+      if (!done) {
+        done = true;
+        resolve({ error: "No pudimos conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo." });
+      }
+    }, 30000);
+    socket.emit(event, payload, (response) => {
+      if (!done) {
+        done = true;
+        window.clearTimeout(timer);
+        resolve(response);
+      }
     });
   });
 }
