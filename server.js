@@ -1,6 +1,7 @@
 const express = require("express");
 const http = require("node:http");
 const path = require("node:path");
+const fs = require("node:fs");
 const crypto = require("node:crypto");
 const QRCode = require("qrcode");
 const { Server } = require("socket.io");
@@ -12,6 +13,8 @@ const rooms = new Map();
 const createLog = new Map();
 
 const PORT = process.env.PORT || 3000;
+const BASE_PATH = (process.env.BASE_PATH || "").replace(/\/$/, "");
+const MOUNTS = BASE_PATH ? ["", BASE_PATH] : [""];
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const THEMES = ["green", "blue", "coral", "violet"];
 const MAX_ROOMS = 500;
@@ -46,7 +49,32 @@ app.get(/^\/qr\/([A-Z0-9]{6})\.svg$/, async (req, res) => {
   res.type("image/svg+xml").set("Cache-Control", "no-store").send(svg);
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+const PUBLIC_DIR = path.join(__dirname, "public");
+
+async function serveIndex(request, response, next) {
+  try {
+    let html = await fs.promises.readFile(path.join(PUBLIC_DIR, "index.html"), "utf8");
+    html = html
+      .replace('content="/og-image.svg"', 'content="' + BASE_PATH + '/og-image.svg"')
+      .replace('href="/favicon.svg"', 'href="' + BASE_PATH + '/favicon.svg"')
+      .replace('href="/styles.css"', 'href="' + BASE_PATH + '/styles.css"')
+      .replace('src="/socket.io/socket.io.js"', 'src="' + BASE_PATH + '/socket.io/socket.io.js"')
+      .replace('src="/app.js"', 'src="' + BASE_PATH + '/app.js"')
+      .replace('href="/"', 'href="' + (BASE_PATH || "/") + '"')
+      .replace("<body>", "<body>\n    <script>window.__LIMLIM_BASE__=" + JSON.stringify(BASE_PATH) + ";</script>");
+    response.type("html").send(html);
+  } catch (error) {
+    next(error);
+  }
+}
+
+for (const mount of MOUNTS) {
+  const rootPath = mount || "/";
+  app.get(rootPath, serveIndex);
+  if (mount) app.get(mount + "/", serveIndex);
+  app.use(rootPath, express.static(PUBLIC_DIR));
+}
+
 
 function cleanText(value, maxLength = 120) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
