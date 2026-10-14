@@ -66,7 +66,7 @@ function showToast(message) {
 
 function emitWithAck(event, payload) {
   return new Promise((resolve) => {
-    socket.timeout(9000).emit(event, payload, (error, response) => {
+    socket.timeout(30000).emit(event, payload, (error, response) => {
       if (error) resolve({ error: "No pudimos conectar con el servidor. Comprueba tu conexión e inténtalo de nuevo." });
       else resolve(response);
     });
