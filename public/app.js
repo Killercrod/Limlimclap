@@ -237,7 +237,7 @@ function renderQuestionTabs() {
   if (quizQuestions.length > 1) {
     tabsContainer.insertAdjacentHTML(
       "beforeend",
-      `<button type="button" class="remove-question-btn" id="btn-remove-question">✕ Eliminar</button>`,
+      `<button type="button" class="button button-secondary" id="btn-remove-question">✕ Eliminar</button>`,
     );
   }
 
