@@ -63,6 +63,18 @@ function showToast(message) {
   toast.classList.add("show");
   window.setTimeout(() => toast.classList.remove("show"), 2400);
 }
+window.addEventListener("error", (event) => {
+  const detail = event?.error?.message || event?.message || "Error inesperado";
+  const target = document.querySelector("#create-error") || document.querySelector("#join-error");
+  if (target) target.textContent = "Error: " + detail;
+  console.error(event?.error || detail);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  const detail = event?.reason?.message || String(event?.reason);
+  const target = document.querySelector("#create-error") || document.querySelector("#join-error");
+  if (target) target.textContent = "Error: " + detail;
+  console.error(event?.reason);
+});
 
 function emitWithAck(event, payload) {
   return new Promise((resolve) => {
@@ -1193,12 +1205,19 @@ function setupEvents() {
     const errorElement = document.querySelector("#create-error");
     errorElement.textContent = "";
 
-    saveCurrentFormToActiveQuestion();
     let payload;
-    if (quizQuestions.length > 1) {
-      payload = { activities: quizQuestions.map(activityObjectFromData) };
-    } else {
-      payload = activityObjectFromData(quizQuestions[0]);
+    try {
+      saveCurrentFormToActiveQuestion();
+      if (quizQuestions.length > 1) {
+        payload = { activities: quizQuestions.map(activityObjectFromData) };
+      } else {
+        payload = activityObjectFromData(quizQuestions[0]);
+      }
+    } catch (error) {
+      errorElement.textContent = "Error en el formulario: " + (error && error.message ? error.message : error);
+      console.error(error);
+      playTone("error");
+      return;
     }
 
     const result = await emitWithAck("host:create", payload);
