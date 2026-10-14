@@ -433,10 +433,8 @@ function hostRoom(socket) {
 io.on("connection", (socket) => {
   socket.on("host:create", (input, acknowledge) => {
     const result = validateActivities(input);
-    if (result.error) return acknowledge?.({ error: result.error });
-    if (rooms.size >= MAX_ROOMS || !allowCreate(clientIp(socket))) {
-      return acknowledge?.({ error: "Se alcanzó el límite de salas. Inténtalo de nuevo más tarde." });
-    }
+    if (result.error) { console.warn("host:create validation error:", result.error); return acknowledge?.({ error: result.error }); }
+    if (rooms.size >= MAX_ROOMS || !allowCreate(clientIp(socket))) { console.warn("host:create rate limit or max rooms"); return acknowledge?.({ error: "Se alcanzó el límite de salas. Inténtalo de nuevo más tarde." }); }
     if (socket.data.hostCode) closeRoom(socket.data.hostCode);
 
     const room = {
@@ -457,6 +455,7 @@ io.on("connection", (socket) => {
       nextId: 1,
     };
     rooms.set(room.code, room);
+    console.log("host:create ok", room.code, "activities", result.activities.length, "ip", clientIp(socket));
     socket.data.hostCode = room.code;
     socket.join(room.code);
     acknowledge?.({ room: roomSummary(room), hostToken: room.hostToken });
