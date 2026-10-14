@@ -57,9 +57,9 @@ async function serveIndex(request, response, next) {
     html = html
       .replace('content="/og-image.svg"', 'content="' + BASE_PATH + '/og-image.svg"')
       .replace('href="/favicon.svg"', 'href="' + BASE_PATH + '/favicon.svg"')
-      .replace('href="/styles.css"', 'href="' + BASE_PATH + '/styles.css"')
+      .replace('href="/styles.css"', 'href="' + BASE_PATH + '/styles.css?v=' + fs.statSync(path.join(PUBLIC_DIR, 'styles.css')).mtimeMs + '"')
       .replace('src="/socket.io/socket.io.js"', 'src="' + BASE_PATH + '/socket.io/socket.io.js"')
-      .replace('src="/app.js"', 'src="' + BASE_PATH + '/app.js"')
+      .replace('src="/app.js"', 'src="' + BASE_PATH + '/app.js?v=' + fs.statSync(path.join(PUBLIC_DIR, 'app.js')).mtimeMs + '"')
       .replace('href="/"', 'href="' + (BASE_PATH || "/") + '"')
       .replace("<body>", "<body>\n    <script>window.__LIMLIM_BASE__=" + JSON.stringify(BASE_PATH) + ";</script>");
     response.type("html").send(html);
