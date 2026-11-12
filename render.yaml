@@ -1,0 +1,17 @@
+# Render Blueprint: despliega Limlimclap como Web Service gratuito.
+# En Render: New > Blueprint > selecciona este repositorio.
+services:
+  - type: web
+    name: limlimclap
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Render pone un proxy delante: así los enlaces y QR usan https.
+      - key: TRUST_PROXY
+        value: "1"
